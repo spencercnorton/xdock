@@ -2362,6 +2362,7 @@ export class DockManager {
             this._settings,
             'changed::show-apps-action',
             () => {
+                this._allDocks.forEach(dock => this._syncShowAppsButtonMode(dock));
                 if (this._settings.showAppsAction !== 1 /* launcher */)
                     this._appLauncher.close();
             },
@@ -2478,8 +2479,11 @@ export class DockManager {
         this._allDocks.push(dock);
 
         // connect app icon into the view selector
-        dock.dash.showAppsButton.connectObject('notify::checked',
-            button => this._onShowAppsButtonToggled(button), dock);
+        dock.dash.showAppsButton.connectObject(
+            'notify::checked', button => this._onShowAppsButtonToggled(button),
+            'clicked', button => this._onShowAppsButtonClicked(button),
+            dock);
+        this._syncShowAppsButtonMode(dock);
 
         const id = dock.connect('destroy', () => {
             dock.disconnect(id);
@@ -2952,23 +2956,27 @@ export class DockManager {
         return this.overviewControls._searchController;
     }
 
+    // With the launcher chosen, the Applications button stops being a toggle:
+    // a click opens the launcher and nothing else. `checked` then stays the
+    // overview's, which sets it whenever the app grid shows, so Super+A and
+    // the overview's own ways into the app grid work as in the Shell. The
+    // launcher used to follow `checked` instead, and so opened on top of the
+    // app grid every time Super+A showed it.
+    _syncShowAppsButtonMode(dock) {
+        const launcher = this.settings.showAppsAction === 1;
+        dock.dash.showAppsButton.toggle_mode = !launcher;
+    }
+
+    _onShowAppsButtonClicked(button) {
+        if (this.settings.showAppsAction !== 1 /* launcher */)
+            return;
+
+        if (Main.overview.visible)
+            Main.overview.hide();
+        this._appLauncher.toggle(button);
+    }
+
     _onShowAppsButtonToggled(button) {
-        if (this._togglingShowAppsGuard)
-            return;
-
-        if (this.settings.showAppsAction === 1 /* launcher */) {
-            if (button.checked) {
-                this._togglingShowAppsGuard = true;
-                try {
-                    button.checked = false;
-                } finally {
-                    this._togglingShowAppsGuard = false;
-                }
-                this._appLauncher.toggle(button);
-            }
-            return;
-        }
-
         const {checked} = button;
         const {overviewControls} = this;
 

@@ -6,7 +6,7 @@ All notable changes to XDock are documented here.
 
 The first public release, on Dash to Dock at `248d42b`.
 
-- A launcher popup for the Applications button: most-used apps, search as you type, an *All Apps* view, and system actions for Settings, locking, logging out, restarting and powering off.
+- A launcher popup for the Applications button: most-used apps, search as you type, an *All Apps* view, and system actions for Settings, locking, logging out, restarting and powering off. Super+A keeps opening GNOME's app grid.
 - Drawers in the launcher's sidebar, stored as GNOME app folders: create, delete (after asking), reorder by dragging, and file apps by dragging them onto a drawer.
 - Dock motion: hover lift, press feedback, a hop when an app starts, a bounce for apps that need attention, and a dock slide that reverses from wherever it is. Nothing runs between bounces, so a still screen is not repainted.
 - A blur behind the dock where its background is translucent, drawn by XDock itself and rounded to the dock's corners with GNOME Rounded Blur. Without that library the dock is drawn as Dash to Dock draws it, with no blur. The blur is on by default, with a switch in the preferences.
