@@ -222,6 +222,15 @@ export class DrawerStore {
         if (isExcluded)
             folder.set_strv('excluded-apps', excluded.filter(item => item !== appId));
 
+        // The Shell's app grid keeps no icon for an empty folder, so nothing
+        // there hears the folder's own keys change: a drawer's first app went
+        // unseen in the grid until the next login. Queue the rebuild the grid
+        // runs for a change to folder-children. (Writing that key back
+        // unchanged does not do it: an unchanged write notifies nobody.)
+        const appDisplay = gridAppDisplay();
+        if (appDisplay && !gridFolderIcon(id))
+            Main.queueDeferredWork(appDisplay._redisplayWorkId);
+
         return true;
     }
 
@@ -240,6 +249,19 @@ export class DrawerStore {
             return false;
 
         folder.set_strv('apps', apps.filter(item => item !== appId));
+
+        // With no app left to show in a folder, the Shell's app grid hides the
+        // folder's icon, and its next rebuild then destroys that hidden icon
+        // while still holding it, and throws. So an icon that has just hidden
+        // leaves the grid the way a deleted folder's does: the folder is out
+        // of folder-children for one rebuild, and then back where it was.
+        const icon = gridFolderIcon(id);
+        if (icon && !icon.visible) {
+            const children = this._settings.get_strv('folder-children');
+            this._settings.set_strv('folder-children', children.filter(item => item !== id));
+            gridAppDisplay()._redisplay();
+            this._settings.set_strv('folder-children', children);
+        }
         return true;
     }
 
