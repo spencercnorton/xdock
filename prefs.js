@@ -285,7 +285,10 @@ export default class DockPreferences extends ExtensionPreferences {
     }
 
     // Returns the bare Gtk.Scale (as an ActionRow suffix) so the caller can
-    // wire up its own debounce/formatting, which differs per-scale.
+    // wire up its own debounce/formatting, which differs per-scale. Setting
+    // `digits` on it also sets `round_digits`, so it moves in the steps it
+    // shows. Setting `round_digits` after that overrides it: at 0, a 0-1
+    // scale can only land on its ends.
     _scaleRow(container, title, {lower, upper, step, page}) {
         const scale = new Gtk.Scale({
             orientation: Gtk.Orientation.HORIZONTAL,
@@ -538,7 +541,6 @@ export default class DockPreferences extends ExtensionPreferences {
             lower: 0.33, upper: 1, step: 0.01, page: 0.10,
         });
         dockSizeScale.digits = 2;
-        dockSizeScale.round_digits = 0;
         dockSizeScale.add_mark(0.9, Gtk.PositionType.TOP, null);
         dockSizeScale.set_value(this._settings.get_double('height-fraction'));
         dockSizeScale.set_format_value_func((_scale, value) => `${Math.round(value * 100)} %`);
@@ -569,9 +571,9 @@ export default class DockPreferences extends ExtensionPreferences {
             lower: 8, upper: DEFAULT_ICONS_SIZES[0], step: 1, page: 10,
         });
         iconSizeScale.digits = 0;
-        iconSizeScale.round_digits = 1;
+        // 24 sits too close to 16 and 32 for a label of its own.
         DEFAULT_ICONS_SIZES.forEach(val =>
-            iconSizeScale.add_mark(val, Gtk.PositionType.TOP, val.toString()));
+            iconSizeScale.add_mark(val, Gtk.PositionType.TOP, val === 24 ? null : val.toString()));
         iconSizeScale.set_value(this._settings.get_int('dash-max-icon-size'));
         iconSizeScale.set_format_value_func((_scale, value) => `${value} px`);
         iconSizeScale.connect('value-changed', () => {
@@ -607,7 +609,6 @@ export default class DockPreferences extends ExtensionPreferences {
             lower: 0, upper: 1, step: 0.01, page: 0.1,
         });
         previewSizeScale.digits = 2;
-        previewSizeScale.round_digits = 0;
         previewSizeScale.set_value(this._settings.get_double('preview-size-scale'));
         previewSizeScale.set_format_value_func(
             (_scale, value) => value === 0 ? __('auto') : `${value}`);
@@ -1014,7 +1015,6 @@ export default class DockPreferences extends ExtensionPreferences {
             lower: 0, upper: 1, step: 0.01, page: 0.10,
         });
         opacityScale.digits = 2;
-        opacityScale.round_digits = 0;
         opacityScale.set_value(this._settings.get_double('background-opacity'));
         opacityScale.set_format_value_func((_scale, value) => `${Math.round(value * 100)}%`);
         opacityScale.connect('value-changed', () =>
@@ -1045,7 +1045,6 @@ export default class DockPreferences extends ExtensionPreferences {
             lower: 0, upper: 1, step: 0.01, page: 0.10,
         });
         minAlphaScale.digits = 2;
-        minAlphaScale.round_digits = 0;
         minAlphaScale.set_value(this._settings.get_double('min-alpha'));
         minAlphaScale.set_format_value_func((_scale, value) => `${Math.round(value * 100)} %`);
         minAlphaScale.connect('value-changed', () =>
@@ -1057,7 +1056,6 @@ export default class DockPreferences extends ExtensionPreferences {
             lower: 0, upper: 1, step: 0.01, page: 0.10,
         });
         maxAlphaScale.digits = 2;
-        maxAlphaScale.round_digits = 0;
         maxAlphaScale.set_value(this._settings.get_double('max-alpha'));
         maxAlphaScale.set_format_value_func((_scale, value) => `${Math.round(value * 100)} %`);
         maxAlphaScale.connect('value-changed', () =>
