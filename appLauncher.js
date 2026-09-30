@@ -15,8 +15,10 @@ import {
 import {
     AppDisplay,
     AppFavorites,
+    Dialog,
     DND,
     Main,
+    ModalDialog,
     PopupMenu,
     UserWidget,
 } from './dependencies/shell/ui.js';
@@ -1176,8 +1178,8 @@ export class AppGridLauncher {
             // neighbour of the one people reach for most.
             this._drawerMenu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
             const remove = new PopupMenu.PopupMenuItem(
-                __('Delete “%s”').format(row.label));
-            remove.connect('activate', () => this._deleteDrawer(id));
+                __('Delete “%s”…').format(row.label));
+            remove.connect('activate', () => this._confirmDrawerDeletion(id, row.label));
             this._drawerMenu.addMenuItem(remove);
         }
 
@@ -1189,14 +1191,59 @@ export class AppGridLauncher {
     }
 
     /**
-     * Delete a drawer, returning its apps to All Apps.
-     *
-     * No confirmation, deliberately, and no app is lost either way: All Apps is
+     * Ask before deleting a drawer. No app is lost either way -- All Apps is
      * the unfiltered catalog, so a drawer is a filter over apps rather than a
-     * place that holds them, and DrawerStore.delete() clears the folder's `apps`
-     * list so the Shell's own app grid puts them back at top level too. This
-     * matches the Shell, which deletes an app folder without asking as soon as
-     * its last app is dragged out.
+     * place that holds them -- but the folder goes from the Shell's app grid
+     * too, and there is no undo. Cancel is the first button, so it is what
+     * has the focus.
+     *
+     * A system-modal dialog closes every open popup menu, this one included
+     * (PopupMenu closes itself on 'system-modal-opened'), so the launcher
+     * steps aside first and opens again once the question is answered. The
+     * dialog waits for the current dispatch to finish for the same reason
+     * _runSystemAction() does: this runs from the drawer menu's item, while
+     * that menu still holds its grab.
+     *
+     * @param {string} id drawer id
+     * @param {string} name drawer name, for the question
+     */
+    _confirmDrawerDeletion(id, name) {
+        const source = this._sourceButton;
+        this.close();
+        this._queueIdle('drawer deletion question', () => {
+            this._deleteDialog?.close();
+
+            const dialog = new ModalDialog.ModalDialog();
+            dialog.contentLayout.add_child(new Dialog.MessageDialogContent({
+                title: __('Delete “%s”?').format(name),
+                description: __('The drawer goes from the app grid too. ' +
+                    'Its apps stay installed, in All Apps.'),
+            }));
+            dialog.setButtons([{
+                label: _('Cancel'),
+                action: () => dialog.close(),
+                key: Clutter.KEY_Escape,
+            }, {
+                label: __('Delete'),
+                action: () => {
+                    this._deleteDrawer(id);
+                    dialog.close();
+                },
+            }]);
+            dialog.connect('closed', () => {
+                if (this._deleteDialog !== dialog)
+                    return;
+
+                this._deleteDialog = null;
+                this._queueIdle('reopening after the drawer question', () => this.open(source));
+            });
+            this._deleteDialog = dialog;
+            dialog.open();
+        });
+    }
+
+    /**
+     * Delete a drawer, returning its apps to All Apps.
      *
      * Nothing is re-rendered here: delete() writes folder-children, and the
      * watch on that key runs _renderDrawers(), which drops the selection when
@@ -1206,6 +1253,9 @@ export class AppGridLauncher {
      * @param {string} id drawer id
      */
     _deleteDrawer(id) {
+        if (this._destroyed)
+            return;
+
         if (!this._drawers.delete(id))
             this._updateStatusText(__('That drawer could not be deleted'));
     }
@@ -1426,6 +1476,7 @@ export class AppGridLauncher {
             return;
 
         this._destroyed = true;
+        this._tryCleanup('drawer deletion dialog', () => this._deleteDialog?.close());
         this._tryCleanup('layout callback', () => this._layoutTask?.deactivate());
         this._tryCleanup('idle sources', () => this._cancelIdleSources());
         this._tryCleanup('drag monitor', () => this._removeDragMonitor());

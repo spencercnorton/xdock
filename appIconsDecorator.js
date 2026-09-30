@@ -85,8 +85,13 @@ export class AppIconsDecorator {
                         this._decorateIcon(i, Labels.ICONS);
                     } else if (i instanceof AppDisplay.FolderIcon) {
                         decorateViewIcons(i.view);
-                        this._signals.addWithLabel(Labels.ICONS, i.view,
-                            'view-loaded', () => decorateAppIcons());
+                        // The grid destroys a folder's view with the folder.
+                        // Connecting to its destroy has the handler forget the
+                        // view then, instead of disconnecting from a disposed
+                        // object on the next redecoration.
+                        this._signals.addWithLabel(Labels.ICONS,
+                            [i.view, 'view-loaded', () => decorateAppIcons()],
+                            [i.view, 'destroy', () => {}]);
                     }
                 });
             };

@@ -6,13 +6,35 @@ import {
 } from './dependencies/gi.js';
 
 import {
+    AppDisplay,
+    Main,
+} from './dependencies/shell/ui.js';
+
+import {
     isUserDrawer,
     resolveDrawerApps,
 } from './appLauncherModel.js';
 
+import {Docking} from './imports.js';
+
 const FOLDERS_SCHEMA = 'org.gnome.desktop.app-folders';
 const FOLDER_SCHEMA = 'org.gnome.desktop.app-folders.folder';
 const FOLDER_PATH = '/org/gnome/desktop/app-folders/folders/';
+
+function gridAppDisplay() {
+    return Main.overview.isDummy
+        ? null : Docking.DockManager.getDefault().overviewControls.appDisplay;
+}
+
+/**
+ * @param {string} id folder id
+ * @returns {object|null} the Shell app grid's icon for the folder, if the grid
+ *   has one
+ */
+function gridFolderIcon(id) {
+    return gridAppDisplay()?.getAllItems().find(item =>
+        item instanceof AppDisplay.FolderIcon && item.id === id) ?? null;
+}
 
 /**
  * Read/write access to the launcher's drawers.
@@ -228,8 +250,16 @@ export class DrawerStore {
      * app grid too. It refuses distribution and category-driven folders, but it
      * does NOT distinguish a drawer created here from one the user made in the
      * app grid -- both are the user's own folders and both are listed in the
-     * sidebar, so both are theirs to delete. No UI calls this yet; when one is
-     * added it must confirm first, because the action is not undoable.
+     * sidebar, so both are theirs to delete. The launcher asks first, because
+     * the action is not undoable.
+     *
+     * The order is the Shell's own (FolderView.removeApp): the folder's keys
+     * are reset while its app-grid icon is told to ignore them, and only then
+     * does the folder leave folder-children. Without the flag the icon answers
+     * the first reset by rebuilding the grid from inside its own change
+     * handler, and that rebuild destroys the icon halfway through the handler.
+     * The flag is never cleared: once the folder has left folder-children the
+     * icon is only waiting for the grid to drop it, and nothing may wake it.
      *
      * @param {string} id drawer id
      * @returns {boolean} whether anything changed
@@ -242,12 +272,15 @@ export class DrawerStore {
         if (!children.includes(id))
             return false;
 
-        this._settings.set_strv('folder-children', children.filter(item => item !== id));
+        const icon = gridFolderIcon(id);
+        if (icon)
+            icon.view._deletingFolder = true;
 
         const folder = this._folderSettings(id);
-        for (const key of ['name', 'translate', 'apps', 'categories', 'excluded-apps'])
+        for (const key of folder.settings_schema.list_keys())
             folder.reset(key);
 
+        this._settings.set_strv('folder-children', children.filter(item => item !== id));
         return true;
     }
 }
