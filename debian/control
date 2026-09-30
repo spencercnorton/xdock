@@ -19,9 +19,9 @@ Description: GNOME Shell extension: the NorviOS dock and app launcher
  the edge of the screen, window previews, intelligent autohide and
  notification badges. The Applications button can open a compact launcher
  with search, the most-used apps, drawers kept as GNOME app folders, and
- buttons for Settings, locking and the power menu. Where the dock's
- background is translucent, what is behind it is blurred; gnome-rounded-blur
- rounds the blur to the dock's corners.
+ buttons for Settings, locking and the power menu. With gnome-rounded-blur
+ installed, what is behind a translucent dock is blurred, rounded to the
+ dock's corners.
  .
  After installing, log out and back in once, then enable it with
  `gnome-extensions enable xdock@spencercnorton.github.io`.

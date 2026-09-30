@@ -4,19 +4,27 @@ import {
     Clutter,
     GObject,
     Mtk,
-    Shell,
     St,
 } from './dependencies/gi.js';
 
 // gnome-rounded-blur's effect clips the blur to the dock's rounded corners.
-// Without it, GNOME Shell's own effect blurs a plain rectangle.
-const Blur = await import('gi://Blur').then(module => module.default, () => null);
+// GNOME Shell's own effect cannot, and its square corners would show outside
+// the dock, so without a usable library there is no blur at all.
+const Blur = await import('gi://Blur').then(({default: blur}) => {
+    try {
+        new blur.BlurEffect();
+        return blur;
+    } catch (error) {
+        logError(error, 'gnome-rounded-blur is installed but cannot be used');
+        return null;
+    }
+}, () => null);
 
 export const EFFECT_NAME = 'xdock-blur';
 
 /**
- * @param {Clutter.Actor} actor an actor on the stage
  * @param {Mtk.Region} clip the part of the stage being redrawn
+ * @param {Clutter.Actor} actor an actor on the stage
  * @returns {boolean} whether the clip holds all of the actor
  */
 function covers(clip, actor) {
@@ -75,27 +83,14 @@ class XDockWholeDockRedraw extends Clutter.Clone {
 });
 
 /**
- * @returns {Clutter.Effect} a background blur, rounded if it can be
- */
-function createEffect() {
-    if (Blur) {
-        try {
-            return new Blur.BlurEffect({mode: Blur.BlurMode.BACKGROUND});
-        } catch (error) {
-            logError(error, 'gnome-rounded-blur is installed but cannot be used');
-        }
-    }
-    return new Shell.BlurEffect({mode: Shell.BlurMode.BACKGROUND});
-}
-
-/**
  * The blur behind the dock's background, owned by one dock's dash.
  *
  * Dash to Dock caches the whole dash in an offscreen framebuffer, and a
  * background blur painted into that framebuffer copies its empty contents
  * instead of the screen. While the blur is on, only the icons keep that cache,
  * and the background paints straight to the screen with the blur under it.
- * While it is off, the dash is exactly as Dash to Dock left it.
+ * While it is off, or without gnome-rounded-blur, the dash is exactly as Dash
+ * to Dock left it.
  */
 export class DockBlur {
     /**
@@ -106,6 +101,9 @@ export class DockBlur {
         this._dash = dash;
         this._settings = settings;
         this._effect = null;
+        this._settingsIds = [];
+        if (!Blur)
+            return;
         this._settingsIds = ['dock-blur', 'dock-blur-sigma', 'dock-blur-brightness'].map(key =>
             settings.connect(`changed::${key}`, () => this._update()));
         this._update();
@@ -123,7 +121,7 @@ export class DockBlur {
         if (this._effect)
             return;
         const {_background: background, _dashContainer: icons} = this._dash;
-        const effect = createEffect();
+        const effect = new Blur.BlurEffect({mode: Blur.BlurMode.BACKGROUND});
         this._redraw = new WholeDockRedraw({source: icons});
         this._redirects = [this._dash.offscreen_redirect, icons.offscreen_redirect];
         this._dash.offscreen_redirect = Clutter.OffscreenRedirect.AUTOMATIC_FOR_OPACITY;
@@ -154,8 +152,7 @@ export class DockBlur {
         const {scaleFactor} = St.ThemeContext.get_for_stage(global.stage);
         this._effect.radius = this._settings.get_int('dock-blur-sigma') * scaleFactor;
         this._effect.brightness = this._settings.get_double('dock-blur-brightness');
-        if (!(this._effect instanceof Shell.BlurEffect))
-            this._effect.corner_radius = node.get_border_radius(St.Corner.TOPLEFT);
+        this._effect.corner_radius = node.get_border_radius(St.Corner.TOPLEFT);
         // Nothing shows through an opaque background, such as the one high
         // contrast gives the dock.
         this._effect.enabled = node.get_background_color().alpha < 255;

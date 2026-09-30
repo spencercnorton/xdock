@@ -5,7 +5,8 @@ import test from 'node:test';
 import {URL} from 'node:url';
 
 // dockBlur.js against stand-ins for the GNOME libraries it uses: what it
-// attaches, what it gives back, and when it asks for a redraw.
+// attaches, what it gives back, when it asks for a redraw, and that without
+// gnome-rounded-blur it leaves the dock alone.
 
 const dataUrl = source => `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`;
 
@@ -35,10 +36,6 @@ export const Mtk = {
     Rectangle: class { constructor(fields) { Object.assign(this, fields); } },
     RegionOverlap: {OUT: 0, IN: 1, PART: 2},
 };
-export const Shell = {
-    BlurMode: {ACTOR: 0, BACKGROUND: 1},
-    BlurEffect: class { constructor(params) { Object.assign(this, {enabled: true, radius: 0, brightness: 1}, params); } },
-};
 export const St = {
     Corner: {TOPLEFT: 0},
     ThemeContext: {get_for_stage: () => ({scaleFactor: 2})},
@@ -52,13 +49,26 @@ export default {
 };
 `);
 
+// Installed, but its shared library does not load.
+const brokenBlur = dataUrl(`
+export default {
+    BlurMode: {ACTOR: 0, BACKGROUND: 1},
+    BlurEffect: class { constructor() { throw new Error('undefined symbol: gb_blur_effect_get_type'); } },
+};
+`);
+
 globalThis.global = {stage: {}};
-globalThis.logError = () => {};
+const logged = [];
+globalThis.logError = (_error, message) => logged.push(message);
 
 const source = (await readFile(new URL('../dockBlur.js', import.meta.url), 'utf8'))
     .replace("'./dependencies/gi.js'", `'${gi}'`);
-const plain = await import(dataUrl(source));
 const rounded = await import(dataUrl(source.replace("'gi://Blur'", `'${roundedBlur}'`)));
+assert.deepEqual(logged, [], 'a usable library was reported as unusable');
+const missing = await import(dataUrl(source));
+assert.deepEqual(logged, [], 'a missing library was reported as an error');
+const broken = await import(dataUrl(source.replace("'gi://Blur'", `'${brokenBlur}'`)));
+assert.equal(logged.length, 1, 'an unusable library was not reported');
 
 class Settings {
     constructor(values = {}) {
@@ -143,8 +153,8 @@ function makeDash({alpha = 94, radius = 18, onStage = true} = {}) {
 
 test('on by default: the background blurs, the icons keep the offscreen cache, the dash does not', () => {
     const dash = makeDash();
-    const blur = new plain.DockBlur(dash, new Settings());
-    const effect = dash._background.effects.get(plain.EFFECT_NAME);
+    const blur = new rounded.DockBlur(dash, new Settings());
+    const effect = dash._background.effects.get(rounded.EFFECT_NAME);
     assert.ok(effect, 'no effect on the background');
     assert.equal(effect.mode, 1, 'not a background-mode blur');
     assert.equal(dash.offscreen_redirect, 1, 'the dash is still redirected offscreen');
@@ -168,18 +178,29 @@ test('the blur takes its strength, brightness and corners from the settings and 
     settings.set('dock-blur-sigma', 5);
     assert.equal(effect.radius, 10);
     blur.destroy();
-
-    const square = makeDash();
-    const shellBlur = new plain.DockBlur(square, new Settings());
-    assert.equal(square._background.effects.get(plain.EFFECT_NAME).corner_radius, undefined,
-        'Shell.BlurEffect has no corner radius to set');
-    shellBlur.destroy();
 });
+
+for (const [what, module] of [['missing', missing], ['installed but unusable', broken]]) {
+    test(`with gnome-rounded-blur ${what}, nothing is attached or connected`, () => {
+        const dash = makeDash();
+        const settings = new Settings();
+        const blur = new module.DockBlur(dash, settings);
+        settings.set('dock-blur', false);
+        settings.set('dock-blur', true);
+        assert.equal(dash._background.effects.size, 0, 'an effect is attached');
+        assert.equal(dash.offscreen_redirect, 2, 'the dash lost its offscreen cache');
+        assert.equal(dash._dashContainer.offscreen_redirect, 0, 'the icons were redirected');
+        assert.equal(dash.children.length, 0, 'a redraw clone is attached');
+        assert.equal(dash._background.handlers.size, 0, 'a style handler is connected');
+        assert.equal(settings.handlers.size, 0, 'a settings handler is connected');
+        blur.destroy();
+    });
+}
 
 test('an opaque background, as in high contrast, turns the effect off until it is translucent again', () => {
     const dash = makeDash({alpha: 255});
-    const blur = new plain.DockBlur(dash, new Settings());
-    const effect = dash._background.effects.get(plain.EFFECT_NAME);
+    const blur = new rounded.DockBlur(dash, new Settings());
+    const effect = dash._background.effects.get(rounded.EFFECT_NAME);
     assert.equal(effect.enabled, false);
     dash._background.alpha = 94;
     dash._background.emit('style-changed');
@@ -192,7 +213,7 @@ test('turning it off gives the dash back exactly as it was, and on again attache
     dash.offscreen_redirect = 3;
     dash._dashContainer.offscreen_redirect = 4;
     const settings = new Settings();
-    const blur = new plain.DockBlur(dash, settings);
+    const blur = new rounded.DockBlur(dash, settings);
     const clone = dash.children[0];
     settings.set('dock-blur', false);
     assert.equal(dash._background.effects.size, 0);
@@ -212,7 +233,7 @@ test('turning it off gives the dash back exactly as it was, and on again attache
 test('off from the start, the dash is never touched', () => {
     const dash = makeDash();
     const settings = new Settings({'dock-blur': false});
-    const blur = new plain.DockBlur(dash, settings);
+    const blur = new rounded.DockBlur(dash, settings);
     settings.set('dock-blur-sigma', 12);
     settings.set('dock-blur-brightness', 0.5);
     assert.equal(dash._background.effects.size, 0);
@@ -238,7 +259,7 @@ test('the theme is read only once the dash is on the stage', () => {
 
 test('a partial redraw is followed by exactly one whole redraw, and nothing more', () => {
     const dash = makeDash();
-    const blur = new plain.DockBlur(dash, new Settings());
+    const blur = new rounded.DockBlur(dash, new Settings());
     const [clone] = dash.children;
     const context = overlap => ({
         get_redraw_clip: () => overlap === null ? null : {

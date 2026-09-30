@@ -905,7 +905,8 @@ export default class DockPreferences extends ExtensionPreferences {
         });
         this._switchRow(dashGroup, {
             title: __('Blur behind the dock'),
-            subtitle: __('Shows where the dock background is not fully opaque.'),
+            subtitle: __('Needs GNOME Rounded Blur, and shows only where the dock background ' +
+                'is not fully opaque.'),
             key: 'dock-blur',
         });
         this._switchRow(dashGroup, {

@@ -128,7 +128,7 @@
     <key type="b" name="dock-blur">
       <default>true</default>
       <summary>Blur behind the dock</summary>
-      <description>Blurs what is behind the dock. It shows only where the dock background is not fully opaque.</description>
+      <description>Blurs what is behind the dock, rounded to its corners. It needs GNOME Rounded Blur (the Blur library), and shows only where the dock background is not fully opaque.</description>
     </key>
     <key type="i" name="dock-blur-sigma">
       <range min="0" max="100"/>
