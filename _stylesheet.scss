@@ -2,7 +2,12 @@
 $base_padding: 6px;
 $base_margin: 4px;
 
-$base_border_radius: 8px;
+$norvi_compact_radius: 8px;
+$norvi_dock_radius: 18px;
+$norvi_menu_radius: 20px;
+$norvi_focus_ring_width: 2px;
+
+$base_border_radius: $norvi_compact_radius;
 $modal_radius: $base_border_radius * 2;
 
 // From https://gitlab.gnome.org/GNOME/gnome-shell/-/blob/43.0/data/theme/gnome-shell-sass/_colors.scss
@@ -24,9 +29,9 @@ $dash_padding_gnome: $dash_padding;
 
 $dash_edge_offset: $base_margin * 3;
 
-// Dash to dock specifics
+// XDock specifics
 $dash_padding: $base_padding + 4px; // 10px
-$dash_border_radius: $modal_radius * 1.5;
+$dash_border_radius: $norvi_dock_radius;
 
 $dock_spacing: round($base_padding / 4);
 $dock_bottom_margin: $base_margin * 4;
@@ -125,7 +130,7 @@ $dock_icons_distance: 4px;
 @mixin padded-dash-edge-items($side, $padding) {
     @each $child_pos in first, last {
         > :#{$child_pos}-child {
-            // Use this instead of #dashtodockDashScrollview rule to apply the
+            // Use this instead of #xdockDashScrollview rule to apply the
             // padding via the last app-icon item
             //.dash-item-container:#{$child_pos}-child .app-well-app,
             .show-apps {
@@ -133,7 +138,7 @@ $dock_icons_distance: 4px;
             }
         }
 
-        #dashtodockDashScrollview:#{$child_pos}-child {
+        #xdockDashScrollview:#{$child_pos}-child {
             @include padded-edge-child($child_pos, $side, $padding);
         }
     }
@@ -190,12 +195,12 @@ $dock_style_modes: null, shrink, extended, extended-shrink;
                 margin-#{$side}: $side_margin;
             }
 
-            #dashtodockDashContainer {
+            #xdockDashContainer {
                 padding: if($is_extended, 0, $padding);
                 padding-#{$side}: 0;
                 padding-#{opposite($side)}: 0;
 
-                > #dashtodockDashScrollview {
+                > #xdockDashScrollview {
                     @include set-internal-children-property($side, margin,
                         0, $dock_icons_distance / 2);
                 }
@@ -240,7 +245,7 @@ $dock_style_modes: null, shrink, extended, extended-shrink;
                 }
 
                 > StButton {
-                    transition-duration: 250;
+                    transition-duration: 250ms;
                     background-size: contain;
                 }
             }
@@ -285,7 +290,7 @@ $dock_style_modes: null, shrink, extended, extended-shrink;
         $is_shrink: str-index(#{$style_mode}, shrink) !=null;
         $is_extended: str-index(#{$style_mode}, extended) !=null;
 
-        #dashtodockContainer.#{$side} {
+        #xdockContainer.#{$side} {
             $parameters: (
                 is_shrink: $is_shrink,
                 is_extended: $is_extended,
@@ -341,38 +346,38 @@ $dock_style_modes: null, shrink, extended, extended-shrink;
         }
     }
 
-    .dashtodock-app-well-preview-menu-item.#{$side} {
+    .xdock-app-well-preview-menu-item.#{$side} {
         @include set-internal-children-property($side, padding,
             0.5em, 0.5em, 1em);
     }
 }
 
-#dashtodockContainer.top.shrink #dash .dash-background {
+#xdockContainer.top.shrink #dash .dash-background {
     margin-top: 4px;
     margin-bottom: 0;
 }
 
-#dashtodockContainer.straight-corner #dash .dash-background,
-#dashtodockContainer.shrink.straight-corner #dash .dash-background {
+#xdockContainer.straight-corner #dash .dash-background,
+#xdockContainer.shrink.straight-corner #dash .dash-background {
     border-radius: 0px;
 }
 
 /* Scrollview style */
-.bottom #dashtodockDashScrollview,
-.top #dashtodockDashScrollview {
+.bottom #xdockDashScrollview,
+.top #xdockDashScrollview {
     -st-hfade-offset: 24px;
 }
 
-.left #dashtodockDashScrollview,
-.right #dashtodockDashScrollview {
+.left #xdockDashScrollview,
+.right #xdockDashScrollview {
     -st-vfade-offset: 24px;
 }
 
-#dashtodockContainer.dashtodock #dash .dash-background {
+#xdockContainer.xdock #dash .dash-background {
     background: $dash_background_color;
 }
 
-#dashtodockContainer.dashtodock .progress-bar,
+#xdockContainer.xdock .progress-bar,
 .overview-tile .progress-bar,
 .icon-grid .progress-bar {
     /* Customization of the progress bar style. The possible elements
@@ -445,8 +450,8 @@ $dock_style_modes: null, shrink, extended, extended-shrink;
     -progress-bar-height-factor: 0.13;
 }
 
-#dashtodockContainer.top #dash .placeholder,
-#dashtodockContainer.bottom #dash .placeholder {
+#xdockContainer.top #dash .placeholder,
+#xdockContainer.bottom #dash .placeholder {
     width: 32px;
     height: 1px;
 }
@@ -455,7 +460,7 @@ $dock_style_modes: null, shrink, extended, extended-shrink;
  * This is applied to a dummy actor. Only the alpha value for the background and border color
  * and the transition-duration are used
  */
-#dashtodockContainer.dummy-opaque {
+#xdockContainer.dummy-opaque {
     background-color: rgba(0, 0, 0, 0.8);
     border-color: rgba(0, 0, 0, 0.4);
     transition-duration: 300ms;
@@ -465,13 +470,13 @@ $dock_style_modes: null, shrink, extended, extended-shrink;
  * This is applied to a dummy actor. Only the alpha value for the background and border color
  * and the transition-duration are used
  */
-#dashtodockContainer.dummy-transparent {
+#xdockContainer.dummy-transparent {
     background-color: rgba(0, 0, 0, 0.2);
     border-color: rgba(0, 0, 0, 0.1);
     transition-duration: 500ms;
 }
 
-#dashtodockContainer .number-overlay,
+#xdockContainer .number-overlay,
 .overview-tile .number-overlay,
 .icon-grid .number-overlay {
     color: rgba(255, 255, 255, 1);
@@ -479,7 +484,7 @@ $dock_style_modes: null, shrink, extended, extended-shrink;
     text-align: center;
 }
 
-#dashtodockContainer .notification-badge,
+#xdockContainer .notification-badge,
 .overview-tile .notification-badge,
 .icon-grid .notification-badge {
     color: rgba(255, 255, 255, 1);
@@ -491,29 +496,201 @@ $dock_style_modes: null, shrink, extended, extended-shrink;
     margin: 2px;
 }
 
-#dashtodockPreviewSeparator.popup-separator-menu-item-horizontal {
+#xdockPreviewSeparator.popup-separator-menu-item-horizontal {
     width: 1px;
     height: auto;
     border-right-width: 1px;
     margin: 32px 0px;
 }
 
-#dashtodockContainer .metro .overview-icon {
+#xdockContainer .metro .overview-icon {
     border-radius: 0px;
 }
 
 @for $i from 2 through 4 {
-    #dashtodockContainer.bottom .metro.running#{$i}.focused,
-    #dashtodockContainer.top .metro.running#{$i}.focused {
+    #xdockContainer.bottom .metro.running#{$i}.focused,
+    #xdockContainer.top .metro.running#{$i}.focused {
         background-image: url("./media/highlight_stacked_bg.svg");
         background-position: 0px 0px;
         background-size: contain;
     }
 
-    #dashtodockContainer.left .metro.running#{$i}.focused,
-    #dashtodockContainer.right .metro.running#{$i}.focused {
+    #xdockContainer.left .metro.running#{$i}.focused,
+    #xdockContainer.right .metro.running#{$i}.focused {
         background-image: url("./media/highlight_stacked_bg_h.svg");
         background-position: 0px 0px;
         background-size: contain;
     }
+}
+
+// App-grid launcher popup (appLauncher.js), opened from the Show
+// Applications button when show-apps-action is set to 'launcher'. Left
+// mostly unstyled beyond spacing/hover so it inherits the user's shell theme.
+.xdock-app-grid-launcher-box {
+    spacing: $base_padding;
+    padding: $base_padding;
+}
+
+// Canonical Norvi menu geometry. This class is on the BoxPointer actor, whose
+// popup-menu-content child owns the visible surface.
+.xdock-app-grid-launcher .popup-menu-content {
+    border-radius: $norvi_menu_radius;
+}
+
+.xdock-app-grid-launcher-scroll {
+    // Slim, subtle overlay scrollbar (the overlay flag is set in JS).
+    StScrollBar {
+        min-width: 8px;
+        min-height: 8px;
+
+        StButton#vhandle,
+        StButton#hhandle {
+            background-color: $remark_color;
+            border-radius: 99px;
+            margin: 2px;
+        }
+    }
+}
+
+.xdock-app-grid-launcher-grid {
+    spacing: $base_padding;
+}
+
+// Results are Shell AppIcons, so padding, radius, hover and focus all come
+// from the theme's .overview-tile. Only the launcher's own keyboard-selection
+// state needs styling here.
+.xdock-app-grid-launcher-item {
+    &.selected {
+        background-color: -st-accent-color;
+        color: -st-accent-fg-color;
+    }
+
+    &:focus {
+        border-radius: $norvi_compact_radius;
+        box-shadow: inset 0 0 0 $norvi_focus_ring_width -st-accent-color;
+    }
+}
+
+// Names are shown on hover instead of as a caption under every icon, where the
+// grid's column width ellipsised them past the point of being readable. Reuses
+// the dock's own .dash-label look so the two tooltips match.
+.xdock-app-grid-launcher-hover-label {
+    // .dash-label carries the background, radius and padding; only the
+    // launcher's own width limit is needed on top of it.
+    max-width: 320px;
+}
+
+.xdock-app-grid-launcher-content {
+    spacing: $base_padding;
+}
+
+// Header bar: who is logged in. Height comes from JS (HEADER_HEIGHT in
+// appLauncherModel.js) because the same number is spent from the popup's height
+// budget before anything is allocated. Only padding and the rule belong here.
+.xdock-app-grid-launcher-header {
+    padding: 0 $base_padding;
+    border-bottom: 1px solid $remark_color;
+
+    // .user-widget supplies the avatar and the name layout; it is Shell's own
+    // widget, so it already matches the system's user chrome.
+    .user-widget {
+        spacing: $base_padding;
+    }
+
+    // Shell only sizes .user-widget-label under .login-dialog/.unlock-dialog,
+    // so outside those the name inherits the popup's body size and reads like
+    // just another drawer row. Same treatment the horizontal login-dialog
+    // widget gets, which is the closest system precedent for this header.
+    // Fits: computeHeaderHeight() is avatar + 16px, ~80px at a 64px avatar.
+    .user-widget-label {
+        font-weight: 700;
+        font-size: 1.364em;
+    }
+}
+
+// Footer bar: system actions, bottom left. Height is FOOTER_HEIGHT in
+// appLauncherModel.js, spent from the popup's height budget there.
+.xdock-app-grid-launcher-footer {
+    padding: 0 $base_padding;
+    spacing: shrink_light($base_padding);
+    border-top: 1px solid $remark_color;
+}
+
+.xdock-app-grid-launcher-footer-button {
+    padding: shrink_light($base_padding);
+    border-radius: $base_border_radius;
+
+    &:hover {
+        background-color: $remark_color;
+    }
+
+    &:focus {
+        background-color: $remark_color;
+        box-shadow: inset 0 0 0 $norvi_focus_ring_width -st-accent-color;
+    }
+}
+
+// Width is set from JS (SIDEBAR_WIDTH in appLauncherModel.js) because the same
+// number has to come out of the grid's width budget before anything is
+// allocated. Only spacing belongs here.
+.xdock-app-grid-launcher-sidebar,
+.xdock-app-grid-launcher-drawer-list {
+    spacing: shrink_light($base_padding);
+}
+
+.xdock-app-grid-launcher-drawer {
+    padding: $base_padding shrink_light($base_padding * 2);
+    border-radius: $base_border_radius;
+    text-align: left;
+
+    &:hover {
+        background-color: $remark_color;
+    }
+
+    &:focus {
+        background-color: $remark_color;
+        box-shadow: inset 0 0 0 $norvi_focus_ring_width -st-accent-color;
+    }
+
+    &.selected {
+        background-color: -st-accent-color;
+        color: -st-accent-fg-color;
+        font-weight: bold;
+    }
+
+    // The proxy that follows the cursor while a drawer is being reordered.
+    &.dragging {
+        background-color: $remark_color;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
+    }
+
+    // The row the proxy came from, left in place so the list does not reflow.
+    &.dragging-source {
+        opacity: 0.4;
+    }
+
+    // Highlighted while an app is dragged over it, cleared on drag end.
+    &.drop-target {
+        background-color: $remark_color;
+        border: 2px solid -st-accent-color;
+        padding: shrink_light($base_padding) shrink_light($base_padding * 2 - 2px);
+    }
+}
+
+.xdock-app-grid-launcher-drawer-entry {
+    margin: shrink_light($base_padding) 0;
+
+    &.error {
+        border: 1px solid red;
+    }
+}
+
+.xdock-app-grid-launcher-drag-actor {
+    // Lifts the dragged icon off the surface while it follows the cursor.
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
+}
+
+.xdock-app-grid-launcher-status {
+    font-size: 0.9em;
+    opacity: 0.75;
 }

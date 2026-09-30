@@ -14,7 +14,6 @@ import {
 } from './dependencies/gi.js';
 
 import {
-    BoxPointer,
     Main,
     PopupMenu,
     Workspace,
@@ -22,6 +21,7 @@ import {
 
 import {
     Docking,
+    PopupMenuUtils,
     Theming,
     Utils,
 } from './imports.js';
@@ -30,6 +30,12 @@ const PREVIEW_MAX_WIDTH = 250;
 const PREVIEW_MAX_HEIGHT = 150;
 
 const PREVIEW_ANIMATION_DURATION = 250;
+// `Workspace` binds ui/workspace.js, which has never exported
+// WINDOW_OVERLAY_FADE_TIME -- the value lives as a non-exported const in
+// ui/windowPreview.js. Reading it off the namespace yields undefined, and
+// Clutter's `ease()` then falls back to its implicit-animation default of
+// 250ms, so these fades ran at a duration nobody chose.
+const WINDOW_OVERLAY_FADE_TIME = Workspace.WINDOW_OVERLAY_FADE_TIME ?? 200;
 const MAX_PREVIEW_GENERATION_ATTEMPTS = 15;
 
 const MENU_MARGINS = 10;
@@ -77,7 +83,7 @@ export class WindowPreviewMenu extends PopupMenu.PopupMenu {
         const windows = this._source.getInterestingWindows();
         if (windows.length > 0) {
             this._redisplay();
-            this.open(BoxPointer.PopupAnimation.FULL);
+            PopupMenuUtils.open(this);
             this.actor.navigate_focus(null, St.DirectionType.TAB_FORWARD, false);
             this._source.emit('sync-tooltip');
         }
@@ -96,7 +102,7 @@ class WindowPreviewList extends PopupMenu.PopupMenuSection {
     constructor(source) {
         super();
         this.actor = new St.ScrollView({
-            name: 'dashtodockWindowScrollview',
+            name: 'xdockWindowScrollview',
             hscrollbar_policy: St.PolicyType.NEVER,
             vscrollbar_policy: St.PolicyType.NEVER,
             overlay_scrollbars: true,
@@ -108,7 +114,7 @@ class WindowPreviewList extends PopupMenu.PopupMenuSection {
         const position = Utils.getPosition();
         this.isHorizontal = position === St.Side.BOTTOM || position === St.Side.TOP;
         this.box.set_vertical(!this.isHorizontal);
-        this.box.set_name('dashtodockWindowList');
+        this.box.set_name('xdockWindowList');
         Utils.addActor(this.actor, this.box);
         this.actor._delegate = this;
 
@@ -146,10 +152,17 @@ class WindowPreviewList extends PopupMenu.PopupMenuSection {
 
         let adjustment, delta;
 
-        if (this.isHorizontal)
-            adjustment = this.actor.get_hscroll_bar().get_adjustment();
-        else
-            adjustment = this.actor.get_vscroll_bar().get_adjustment();
+        // Direct [hv]adjustment accessors were added in GNOME 46; get_[hv]scroll_bar()
+        // was removed there. Keep the old accessor as a GNOME 45 fallback.
+        if (this.isHorizontal) {
+            adjustment = this.actor.get_hadjustment
+                ? this.actor.get_hadjustment()
+                : this.actor.get_hscroll_bar().get_adjustment();
+        } else {
+            adjustment = this.actor.get_vadjustment
+                ? this.actor.get_vadjustment()
+                : this.actor.get_vscroll_bar().get_adjustment();
+        }
 
         const increment = adjustment.step_increment;
 
@@ -195,7 +208,7 @@ class WindowPreviewList extends PopupMenu.PopupMenuSection {
 
         // All app windows with a static order
         const newWin = this._source.getInterestingWindows().sort((a, b) =>
-            a.get_stable_sequence() > b.get_stable_sequence());
+            a.get_stable_sequence() - b.get_stable_sequence());
 
         const addedItems = [];
         const removedActors = [];
@@ -277,7 +290,7 @@ class WindowPreviewList extends PopupMenu.PopupMenuSection {
         this.box.queue_relayout();
 
         if (newWin.length < 1)
-            this._getTopMenu().close(~0);
+            PopupMenuUtils.close(this._getTopMenu());
 
         // As for upstream:
         // St.ScrollView always requests space horizontally for a possible vertical
@@ -333,7 +346,7 @@ class WindowPreviewMenuItem extends PopupMenu.PopupBaseMenuItem {
 
         // We don't want this: it adds spacing on the left of the item.
         this.remove_child(this._ornamentIcon);
-        this.add_style_class_name('dashtodock-app-well-preview-menu-item');
+        this.add_style_class_name('xdock-app-well-preview-menu-item');
         this.add_style_class_name(Theming.PositionStyleClass[position]);
         if (Docking.DockManager.settings.customThemeShrink)
             this.add_style_class_name('shrink');
@@ -519,17 +532,12 @@ class WindowPreviewMenuItem extends PopupMenu.PopupBaseMenuItem {
     }
 
     deleteAllWindows() {
-        // Delete all windows, starting from the bottom-most (most-modal) one
-        // let windows = this._window.get_compositor_private().get_children();
-        const windows = this._clone.get_children();
-        for (let i = windows.length - 1; i >= 1; i--) {
-            const realWindow = windows[i].source;
-            const metaWindow = realWindow.meta_window;
-
-            metaWindow.delete(global.get_current_time());
-        }
-
-        this._window.delete(global.get_current_time());
+        // Close the window's attached (modal) dialogs first, then the window
+        // itself. this._clone is a Clutter.Clone with no children, so the old
+        // get_children() loop never ran; enumerate transients instead.
+        const time = global.get_current_time();
+        this._window.foreach_transient(transient => transient.delete(time));
+        this._window.delete(time);
     }
 
     _onWindowAdded(workspace, win) {
@@ -593,8 +601,8 @@ class WindowPreviewMenuItem extends PopupMenu.PopupBaseMenuItem {
             this.closeButton.remove_all_transitions();
             this.closeButton.ease({
                 opacity: 255,
-                duration: Workspace.WINDOW_OVERLAY_FADE_TIME,
-                mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+                duration: WINDOW_OVERLAY_FADE_TIME,
+                mode: Clutter.AnimationMode.EASE_OUT_CUBIC,
             });
         }
     }
@@ -607,8 +615,8 @@ class WindowPreviewMenuItem extends PopupMenu.PopupBaseMenuItem {
         this.closeButton.remove_all_transitions();
         this.closeButton.ease({
             opacity: 0,
-            duration: Workspace.WINDOW_OVERLAY_FADE_TIME,
-            mode: Clutter.AnimationMode.EASE_IN_QUAD,
+            duration: WINDOW_OVERLAY_FADE_TIME,
+            mode: Clutter.AnimationMode.EASE_IN_CUBIC,
         });
     }
 
@@ -624,7 +632,7 @@ class WindowPreviewMenuItem extends PopupMenu.PopupBaseMenuItem {
             opacity: 255,
             width: fullWidth,
             duration: time,
-            mode: Clutter.AnimationMode.EASE_IN_OUT_QUAD,
+            mode: Clutter.AnimationMode.EASE_OUT_CUBIC,
         });
     }
 
@@ -632,14 +640,10 @@ class WindowPreviewMenuItem extends PopupMenu.PopupBaseMenuItem {
         this.remove_all_transitions();
         this.ease({
             opacity: 0,
-            duration: PREVIEW_ANIMATION_DURATION,
-        });
-
-        this.ease({
             width: 0,
             height: 0,
             duration: PREVIEW_ANIMATION_DURATION,
-            delay: PREVIEW_ANIMATION_DURATION,
+            mode: Clutter.AnimationMode.EASE_IN_CUBIC,
             onComplete: () => this.destroy(),
         });
     }

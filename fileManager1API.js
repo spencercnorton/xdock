@@ -37,7 +37,7 @@ export class FileManager1Client {
             // Use async construction to avoid blocking on errors.
                 if (error) {
                     if (!error.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
-                        global.log(error);
+                        logError(error);
                 } else {
                     this._updateWindows();
                     this._updateLocationMap();

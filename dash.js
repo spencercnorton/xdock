@@ -32,6 +32,13 @@ import {
 // so we just define it like it is defined in Dash;
 // taken from https://gitlab.gnome.org/GNOME/gnome-shell/-/blob/main/js/ui/dash.js
 const DASH_ANIMATION_TIME = Dash.DASH_ANIMATION_TIME ?? 200;
+// `Util` binds misc/util.js, which has never exported SCROLL_TIME -- the value
+// lives as a non-exported const in misc/animationUtils.js. Reading it off the
+// namespace yields undefined, and `ease()` floors an undefined duration to 0,
+// so the scroll became a hard jump with the easing mode silently discarded.
+// Same `??` shape as DASH_ANIMATION_TIME above: if a future Shell exports it,
+// we pick theirs up; otherwise we use upstream's own value.
+const SCROLL_TIME = Util.SCROLL_TIME ?? 100;
 const DASH_VISIBILITY_TIMEOUT = 3;
 
 const Labels = Object.freeze({
@@ -72,7 +79,7 @@ class DockDashItemContainer extends Dash.DashItemContainer {
             scale_y: 1,
             opacity: 255,
             duration: animate ? DASH_ANIMATION_TIME : 0,
-            mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+            mode: Clutter.AnimationMode.EASE_OUT_CUBIC,
             onComplete: () => {
                 // when the animation is ended, we simulate
                 // a hover to gain back focus and unblur the
@@ -167,7 +174,7 @@ export const DockDash = GObject.registerClass({
         this._labelShowing = false;
 
         this._dashContainer = new St.BoxLayout({
-            name: 'dashtodockDashContainer',
+            name: 'xdockDashContainer',
             x_align: Clutter.ActorAlign.CENTER,
             y_align: Clutter.ActorAlign.CENTER,
             vertical: !this._isHorizontal,
@@ -176,7 +183,7 @@ export const DockDash = GObject.registerClass({
         });
 
         this._scrollView = new St.ScrollView({
-            name: 'dashtodockDashScrollview',
+            name: 'xdockDashScrollview',
             hscrollbar_policy: this._isHorizontal ? St.PolicyType.EXTERNAL : St.PolicyType.NEVER,
             vscrollbar_policy: this._isHorizontal ?  St.PolicyType.NEVER : St.PolicyType.EXTERNAL,
             x_expand: this._isHorizontal,
@@ -187,7 +194,7 @@ export const DockDash = GObject.registerClass({
         this._scrollView.connect('scroll-event', this._onScrollEvent.bind(this));
 
         this._boxContainer = new St.BoxLayout({
-            name: 'dashtodockBoxContainer',
+            name: 'xdockBoxContainer',
             x_align: Clutter.ActorAlign.FILL,
             y_align: Clutter.ActorAlign.FILL,
             vertical: !this._isHorizontal,
@@ -336,70 +343,73 @@ export const DockDash = GObject.registerClass({
 
 
     _onItemDragBegin(...args) {
-        return Dash.Dash.prototype._onItemDragBegin.call(this, ...args);
+        return Dash.Dash.prototype._onItemDragBegin?.call(this, ...args);
     }
 
     _onItemDragCancelled(...args) {
-        return Dash.Dash.prototype._onItemDragCancelled.call(this, ...args);
+        return Dash.Dash.prototype._onItemDragCancelled?.call(this, ...args);
     }
 
     _onItemDragEnd(...args) {
-        return Dash.Dash.prototype._onItemDragEnd.call(this, ...args);
+        return Dash.Dash.prototype._onItemDragEnd?.call(this, ...args);
     }
 
     _endItemDrag(...args) {
-        return Dash.Dash.prototype._endItemDrag.call(this, ...args);
+        return Dash.Dash.prototype._endItemDrag?.call(this, ...args);
     }
 
     _onItemDragMotion(...args) {
-        return Dash.Dash.prototype._onItemDragMotion.call(this, ...args);
+        return Dash.Dash.prototype._onItemDragMotion?.call(this, ...args);
     }
 
     _appIdListToHash(...args) {
-        return Dash.Dash.prototype._appIdListToHash.call(this, ...args);
+        return Dash.Dash.prototype._appIdListToHash?.call(this, ...args);
     }
 
     _queueRedisplay(...args) {
-        return Dash.Dash.prototype._queueRedisplay.call(this, ...args);
+        return Dash.Dash.prototype._queueRedisplay?.call(this, ...args);
     }
 
     _hookUpLabel(...args) {
-        return Dash.Dash.prototype._hookUpLabel.call(this, ...args);
+        return Dash.Dash.prototype._hookUpLabel?.call(this, ...args);
     }
 
     _syncLabel(...args) {
-        return Dash.Dash.prototype._syncLabel.call(this, ...args);
+        return Dash.Dash.prototype._syncLabel?.call(this, ...args);
     }
 
     _clearDragPlaceholder(...args) {
-        return Dash.Dash.prototype._clearDragPlaceholder.call(this, ...args);
+        return Dash.Dash.prototype._clearDragPlaceholder?.call(this, ...args);
     }
 
     _clearEmptyDropTarget(...args) {
-        return Dash.Dash.prototype._clearEmptyDropTarget.call(this, ...args);
+        return Dash.Dash.prototype._clearEmptyDropTarget?.call(this, ...args);
     }
 
     handleDragOver(source, actor, x, y, time) {
         let ret;
         if (this._isHorizontal) {
-            ret = Dash.Dash.prototype.handleDragOver.call(this, source, actor, x, y, time);
+            ret = Dash.Dash.prototype.handleDragOver?.call(this, source, actor, x, y, time);
 
             if (ret === DND.DragMotionResult.CONTINUE)
                 return ret;
         } else {
             const propertyInjections = new Utils.PropertyInjectionsHandler();
-            propertyInjections.add(this._box, 'width', {
-                get: () => this._box.get_children().reduce((a, c) => a + c.height, 0),
-            });
-
-            if (this._dragPlaceholder) {
-                propertyInjections.add(this._dragPlaceholder, 'width', {
-                    get: () => this._dragPlaceholder.height,
+            try {
+                propertyInjections.add(this._box, 'width', {
+                    get: () => this._box.get_children().reduce((a, c) => a + c.height, 0),
                 });
-            }
 
-            ret = Dash.Dash.prototype.handleDragOver.call(this, source, actor, y, x, time);
-            propertyInjections.destroy();
+                if (this._dragPlaceholder) {
+                    propertyInjections.add(this._dragPlaceholder, 'width', {
+                        get: () => this._dragPlaceholder.height,
+                    });
+                }
+
+                ret = Dash.Dash.prototype.handleDragOver?.call(this, source, actor, y, x, time);
+            } finally {
+                propertyInjections.destroy();
+            }
 
             if (ret === DND.DragMotionResult.CONTINUE)
                 return ret;
@@ -411,7 +421,7 @@ export const DockDash = GObject.registerClass({
                 let pos = this._dragPlaceholderPos;
                 if (this._isHorizontal &&
                     Clutter.get_default_text_direction() === Clutter.TextDirection.RTL)
-                    pos = this._box.get_children() - 1 - pos;
+                    pos = this._box.get_children().length - 1 - pos;
 
                 if (pos !== this._dragPlaceholderPos) {
                     this._dragPlaceholderPos = pos;
@@ -441,15 +451,15 @@ export const DockDash = GObject.registerClass({
     }
 
     acceptDrop(...args) {
-        return Dash.Dash.prototype.acceptDrop.call(this, ...args);
+        return Dash.Dash.prototype.acceptDrop?.call(this, ...args);
     }
 
     _onWindowDragBegin(...args) {
-        return Dash.Dash.prototype._onWindowDragBegin.call(this, ...args);
+        return Dash.Dash.prototype._onWindowDragBegin?.call(this, ...args);
     }
 
     _onWindowDragEnd(...args) {
-        return Dash.Dash.prototype._onWindowDragEnd.call(this, ...args);
+        return Dash.Dash.prototype._onWindowDragEnd?.call(this, ...args);
     }
 
     _onScrollEvent(actor, event) {
@@ -497,19 +507,30 @@ export const DockDash = GObject.registerClass({
     }
 
     _ensureItemVisibility(actor) {
+        // Clear any pending timeout and its actor 'destroy' handler first, so the
+        // handler isn't leaked on the hover-out path or orphaned when a new hover
+        // replaces a still-pending one.
+        if (this._ensureActorVisibilityTimeoutId) {
+            GLib.source_remove(this._ensureActorVisibilityTimeoutId);
+            this._ensureActorVisibilityTimeoutId = 0;
+        }
+        if (this._ensureVisibilityDestroyId) {
+            this._ensureVisibilityActor.disconnect(this._ensureVisibilityDestroyId);
+            this._ensureVisibilityDestroyId = 0;
+            this._ensureVisibilityActor = null;
+        }
+
         if (actor?.hover) {
-            const destroyId =
+            this._ensureVisibilityActor = actor;
+            this._ensureVisibilityDestroyId =
                 actor.connect('destroy', () => this._ensureItemVisibility(null));
             this._ensureActorVisibilityTimeoutId = GLib.timeout_add(
                 GLib.PRIORITY_DEFAULT, 100, () => {
-                    actor.disconnect(destroyId);
-                    ensureActorVisibleInScrollView(this._scrollView, actor);
                     this._ensureActorVisibilityTimeoutId = 0;
+                    ensureActorVisibleInScrollView(this._scrollView, actor);
+                    this._ensureItemVisibility(null);
                     return GLib.SOURCE_REMOVE;
                 });
-        } else if (this._ensureActorVisibilityTimeoutId) {
-            GLib.source_remove(this._ensureActorVisibilityTimeoutId);
-            this._ensureActorVisibilityTimeoutId = 0;
         }
     }
 
@@ -611,7 +632,7 @@ export const DockDash = GObject.registerClass({
     }
 
     _itemMenuStateChanged(item, opened) {
-        Dash.Dash.prototype._itemMenuStateChanged.call(this, item, opened);
+        Dash.Dash.prototype._itemMenuStateChanged?.call(this, item, opened);
 
         if (opened) {
             this.emit('menu-opened');
@@ -736,7 +757,7 @@ export const DockDash = GObject.registerClass({
                 width: targetWidth,
                 height: targetHeight,
                 duration: DASH_ANIMATION_TIME,
-                mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+                mode: Clutter.AnimationMode.EASE_OUT_CUBIC,
             });
         }
 
@@ -747,7 +768,7 @@ export const DockDash = GObject.registerClass({
             this._separator.ease({
                 ...animateProperties,
                 duration: DASH_ANIMATION_TIME,
-                mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+                mode: Clutter.AnimationMode.EASE_OUT_CUBIC,
             });
         }
     }
@@ -1191,15 +1212,15 @@ function ensureActorVisibleInScrollView(scrollView, actor) {
 
     if (vValue !== vValue0) {
         vAdjustment.ease(vValue, {
-            mode: Clutter.AnimationMode.EASE_OUT_QUAD,
-            duration: Util.SCROLL_TIME,
+            mode: Clutter.AnimationMode.EASE_OUT_CUBIC,
+            duration: SCROLL_TIME,
         });
     }
 
     if (hValue !== hValue0) {
         hAdjustment.ease(hValue, {
-            mode: Clutter.AnimationMode.EASE_OUT_QUAD,
-            duration: Util.SCROLL_TIME,
+            mode: Clutter.AnimationMode.EASE_OUT_CUBIC,
+            duration: SCROLL_TIME,
         });
     }
 

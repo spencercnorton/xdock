@@ -1,53 +1,94 @@
-# Dash to Dock
-![screenshot](https://github.com/micheleg/dash-to-dock/raw/master/media/screenshot.jpg)
+<h1 align="center">XDock</h1>
 
-## A dock for the GNOME Shell
-This extension enhances the dash moving it out of the overview and transforming it in a dock for an easier launching of applications and a faster switching between windows and desktops without having to leave the desktop view.
+<p align="center">
+  <strong>A dock and app launcher for GNOME Shell.</strong><br>
+  The NorviOS dock: your apps and windows on a dock at the edge of the screen, and a compact launcher with search, drawers and system actions.
+</p>
 
-[<img src="https://micheleg.github.io/dash-to-dock/media/get-it-on-ego.png" height="100">](https://extensions.gnome.org/extension/307/dash-to-dock)
+<p align="center">
+  <a href="https://github.com/spencercnorton/norvi-os"><img alt="Part of NorviOS" src="https://img.shields.io/badge/NorviOS-component-FD8024.svg"></a>
+  <a href="https://github.com/spencercnorton/xdock/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/spencercnorton/xdock/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/spencercnorton/xdock/tags"><img alt="Latest release" src="https://img.shields.io/github/v/tag/spencercnorton/xdock?label=release&sort=semver"></a>
+  <a href="#install"><img alt="Install for GNOME Shell" src="https://img.shields.io/badge/install-GNOME%20Shell-4a86cf.svg"></a>
+  <a href="COPYING"><img alt="Licence" src="https://img.shields.io/badge/licence-GPL--2.0--or--later-blue.svg"></a>
+  <a href="https://buy.stripe.com/8x26oH2U44f65TRe574wM04"><img alt="Donate" src="https://img.shields.io/badge/donate-Stripe-635bff.svg?logo=stripe&logoColor=white"></a>
+</p>
 
-For additional installation instructions and more information visit [https://micheleg.github.io/dash-to-dock/](https://micheleg.github.io/dash-to-dock/).
+XDock moves GNOME's dash out of the overview and onto the desktop, as a dock for launching apps and switching between windows without leaving what you are doing. It is a fork of [Dash to Dock](https://github.com/micheleg/dash-to-dock) by Michele Gaio and its contributors, and keeps its complete history. It is part of the [NorviOS](https://github.com/spencercnorton/norvi-os) desktop and supports GNOME Shell 50.
 
-## Installation from source
+## What it does
 
-The extension can be installed directly from source, either for the convenience of using git or to test the latest development version. Clone the desired branch with git
+**The dock you know from Dash to Dock.** Pinned and running apps with window counts, previews of an app's windows, click, scroll and middle-click actions, intelligent autohide that gets out of the way of your windows, any screen edge, one monitor or all of them, volumes, devices and the trash, and notification badges.
 
-### Build Dependencies
+**A launcher that stays small.** Set the Applications button to open the launcher instead of the full-screen overview (in the preferences, *Launchers*, *When the Applications button is clicked*). It is a popup above the dock that opens on your most-used apps, searches as you type, and has an *All Apps* view and your drawers in a sidebar. It works from the keyboard as well as the mouse.
 
-To compile the stylesheet you'll need an implementation of SASS. Dash to Dock supports `dart-sass` (`sass`), `sassc`, and `ruby-sass`. Every distro should have at least one of these implementations, we recommend using `dart-sass` (`sass`) or `sassc` over `ruby-sass` as `ruby-sass` is deprecated.
+**Drawers.** Create a drawer from the sidebar's menu, drag apps onto it, and drag drawers up and down to reorder them; an app's menu takes it out of a drawer again, and a drawer's menu deletes it. Drawers are GNOME's own app folders, so the ones you make here also appear in the overview's app grid, and folders you already have appear here.
 
-By default, Dash to Dock will attempt to build with `sassc`. To change this behavior set the `SASS` environment variable to either `dart` or `ruby`.
+**System actions at hand.** The launcher shows who is logged in, and has buttons for Settings, for locking the screen, and for a power menu with log out, restart and power off, each following what GNOME allows.
+
+**Motion that reads as one dock.** Icons lift on hover and press in when clicked, hop when an app starts, and bounce when an app needs your attention. Showing and hiding the dock reverses smoothly from wherever it is, and the animations switch off with GNOME's *Reduce Animation* setting.
+
+**Preferences on libadwaita.** The preferences window uses GNOME's current design, in pages for position and size, launchers, behaviour and appearance.
+
+## Install
+
+### GNOME Shell — the release zip
+
+Download `xdock.shell-extension.zip` and `SHA256SUMS.txt` from the [latest release](https://github.com/spencercnorton/xdock/releases/latest), then:
 
 ```bash
-export SASS=dart
-# or...
-export SASS=ruby
+sha256sum --check --ignore-missing SHA256SUMS.txt
+gnome-extensions install --force xdock.shell-extension.zip
 ```
 
-### Building
-
-Clone the repository or download the branch from github. A simple Makefile is included.
-
-Next use `make` to install the extension into your home directory. A Shell reload is required <kbd>Alt</kbd> + <kbd>F2</kbd> <kbd>r</kbd> <kbd>Enter</kbd> under Xorg or under Wayland you may have to logout and login. The extension has to be enabled  with *gnome-extensions-app* (GNOME Extensions) or with *dconf*.
+Log out and back in once so GNOME Shell sees the new extension, then enable it:
 
 ```bash
-git clone https://github.com/micheleg/dash-to-dock.git
-make -C dash-to-dock install
+gnome-extensions enable xdock@spencercnorton.github.io
 ```
 
-If `msgfmt` is not available on your system, you will see an error message like the following:
+Turn off Dash to Dock or Ubuntu Dock first if you use one: two docks on the same screen get in each other's way.
+
+### Ubuntu 26.04 — the release package
+
+The same release carries `gnome-shell-extension-xdock_*_all.deb`, which installs the extension for every user and its settings schema and translations system-wide: `sudo apt install ./gnome-shell-extension-xdock_*_all.deb`. Then log out and in, and enable it as above.
+
+The extension is not on extensions.gnome.org.
+
+## Where your data lives
+
+| Setting | Purpose |
+|---|---|
+| dconf `/org/gnome/shell/extensions/xdock/` | XDock's own settings |
+| dconf `/org/gnome/desktop/app-folders/` | The drawers. These are GNOME's app folders, shared with the overview's app grid |
+| dconf `/org/gnome/shell/favorite-apps` | The apps pinned to the dock. This is GNOME's own list, shared with the overview's dash |
+
+XDock opens no network connections. The launcher ranks apps by GNOME's own usage statistics and reads your name and picture from GNOME's accounts service; neither leaves the machine.
+
+## Documentation
+
+- [CHANGELOG.md](CHANGELOG.md): one entry per release
+- [NOTICE](NOTICE): provenance, artwork and licences
+
+## Contributing and support
+
+- Bugs and feature requests: [open an issue](https://github.com/spencercnorton/xdock/issues/new/choose). Questions: [Discussions](https://github.com/spencercnorton/xdock/discussions).
+- Security reports: [private vulnerability reporting](https://github.com/spencercnorton/xdock/security/advisories/new). See [SECURITY.md](SECURITY.md). There is no e-mail address; that is deliberate.
+- Pull requests are welcome; read [CONTRIBUTING.md](CONTRIBUTING.md) first. Changes are reviewed and merged on GitHub, then shipped in tagged releases.
+- If this saves you time, you can [support its development](https://buy.stripe.com/8x26oH2U44f65TRe574wM04).
+
+## Development
 
 ```bash
-make: msgfmt: No such file or directory
+make verify REQUIRE_GJS=1           # ESLint, the Node and GJS tests, schemas and translations
+make install                        # build and install into ~/.local/share/gnome-shell/extensions
+scripts/build.sh                    # the release zip and .deb, into dist/
 ```
 
-In this case install the `gettext` package from your distribution's repository.
+Building needs `sassc`, `gettext` and `glib-compile-schemas`; the checks also need Node.js, GJS and ESLint 9. The dock builds on GNOME Shell's dash, overview and popup-menu modules, which are not a stable API, so each new GNOME Shell major version needs a check before it is added to `metadata.json`.
 
+## Licence
 
-## Bug Reporting
+[GPL-2.0-or-later](COPYING), as Dash to Dock is.
 
-Bugs should be reported to the Github bug tracker [https://github.com/micheleg/dash-to-dock/issues](https://github.com/micheleg/dash-to-dock/issues).
-
-## License
-Dash to Dock Gnome Shell extension is distributed under the terms of the GNU General Public License,
-version 2 or later. See the COPYING file for details.
+XDock is based on [Dash to Dock](https://github.com/micheleg/dash-to-dock) at `248d42b`, whose history this repository keeps unchanged. The changes since then are © 2026 Spencer Norton; see [NOTICE](NOTICE).

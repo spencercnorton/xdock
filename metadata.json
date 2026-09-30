@@ -1,17 +1,13 @@
 {
 "shell-version": [
-    "45",
-    "46",
-    "47",
-    "48",
-    "49",
     "50"
 ],
-"uuid": "dash-to-dock@micxgx.gmail.com",
-"name": "Dash to Dock",
-"description": "A dock for the Gnome Shell. This extension moves the dash out of the overview transforming it in a dock for an easier launching of applications and a faster switching between windows and desktops. Side and bottom placement options are available.",
-"original-author": "micxgx@gmail.com",
-"url": "https://micheleg.github.io/dash-to-dock/",
-"gettext-domain": "dashtodock",
-"version": 105
+"uuid": "xdock@spencercnorton.github.io",
+"name": "XDock",
+"description": "The NorviOS dock and app launcher for GNOME Shell: fast app launching, window switching, drawers, search and system actions.",
+"original-author": "Michele G.",
+"url": "https://github.com/spencercnorton/xdock",
+"gettext-domain": "xdock",
+"version": 105,
+"version-name": "2.0.0"
 }

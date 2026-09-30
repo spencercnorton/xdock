@@ -1,11 +1,11 @@
-# Dash to Dock master ko.po
-# Copyright (C) 2024 Dash to Dock COPYRIGHT HOLDER
-# This file is distributed under the same license as the Dash to Dock package.
+# XDock master ko.po
+# Copyright (C) 2024 XDock COPYRIGHT HOLDER
+# This file is distributed under the same license as the XDock package.
 # Byoungchan Lee <byoungchan.lee@gmx.com>, 2024.
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: Dash to Dock\n"
+"Project-Id-Version: XDock\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2024-04-21 15:19+0900\n"
 "PO-Revision-Date: 2024-04-22 07:15+0900\n"
@@ -119,8 +119,8 @@ msgstr[0] "%d 창 종료"
 #. can also translate the full message if this fits better your language.
 #: appIcons.js:1450
 #, javascript-format
-msgid "Dash to Dock %s"
-msgstr "Dash to Dock %s"
+msgid "XDock %s"
+msgstr "XDock %s"
 
 #: appIcons.js:1450
 msgid "Settings"

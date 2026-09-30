@@ -1,6 +1,6 @@
-# Kazakh translation for dashtodock.
-# Copyright (C) 2026 THE dashtodock's COPYRIGHT HOLDER
-# This file is distributed under the same license as the dashtodock package.
+# Kazakh translation for xdock.
+# Copyright (C) 2026 THE xdock's COPYRIGHT HOLDER
+# This file is distributed under the same license as the xdock package.
 # Baurzhan Muftakhidinov <baurthefirst@gmail.com>, 2026.
 #
 msgid ""
@@ -122,8 +122,8 @@ msgid_plural "Quit %d Windows"
 msgstr[0] "%d терезеден шығу"
 
 #: appIcons.js:1554
-msgid "Dash to Dock"
-msgstr "Dash to Dock"
+msgid "XDock"
+msgstr "XDock"
 
 #: appIcons.js:1556
 msgid "Settings"

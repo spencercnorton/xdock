@@ -12,6 +12,8 @@ import {
     Docking,
 } from './imports.js';
 
+import {runCleanupTasks} from './lifecycle.js';
+
 const {_gi: Gi} = imports;
 
 export const SignalsHandlerFlags = Object.freeze({
@@ -25,7 +27,7 @@ const GENERIC_KEY = Symbol('generic');
  * Simplify global signals and function injections handling
  * abstract class
  */
-const BasicHandler = class DashToDockBasicHandler {
+const BasicHandler = class XDockBasicHandler {
     static get genericKey() {
         return GENERIC_KEY;
     }
@@ -52,15 +54,21 @@ const BasicHandler = class DashToDockBasicHandler {
     }
 
     clear() {
-        Object.getOwnPropertySymbols(this._storage).forEach(label =>
-            this.removeWithLabel(label));
+        return runCleanupTasks(
+            Object.getOwnPropertySymbols(this._storage).map(label => [
+                label.description ?? 'unlabelled handler',
+                () => this._removeLabel(label),
+            ]));
     }
 
     destroy() {
-        this._parentObject?.disconnect(this._destroyId);
+        const parentObject = this._parentObject;
         this._parentObject = null;
 
-        this.clear();
+        return runCleanupTasks([
+            ['parent destroy signal', () => parentObject?.disconnect(this._destroyId)],
+            ['registered handlers', () => this.clear()],
+        ], (error, operation) => logError(error, `Destroying ${operation}`));
     }
 
     block() {
@@ -98,8 +106,42 @@ const BasicHandler = class DashToDockBasicHandler {
     }
 
     removeWithLabel(label) {
-        this._storage[label]?.reverse().forEach(item => this._remove(item));
+        const errors = this._removeLabel(label);
+
+        // Preserve the old direct-call contract after attempting every item.
+        if (errors.length)
+            throw errors[0].error;
+        return errors;
+    }
+
+    _removeLabel(label) {
+        const items = this._storage[label] ?? [];
+        // Remove the current batch up front so a re-entrant add gets a fresh
+        // list. Failed removals are restored below instead of being discarded:
+        // a later clear()/destroy() must still be able to retry ownership that
+        // remains live after a transient disconnect/restoration failure.
         delete this._storage[label];
+        const failedItems = new Set();
+
+        const errors = runCleanupTasks(
+            [...items].reverse().map((item, index) => [
+                `${label.description ?? 'unlabelled handler'} #${index + 1}`,
+                () => {
+                    try {
+                        this._remove(item);
+                    } catch (error) {
+                        failedItems.add(item);
+                        throw error;
+                    }
+                },
+            ]),
+            (error, item) => logError(error, `Removing ${item}`));
+
+        const retained = items.filter(item => failedItems.has(item));
+        const addedDuringRemoval = this._storage[label] ?? [];
+        if (retained.length || addedDuringRemoval.length)
+            this._storage[label] = [...retained, ...addedDuringRemoval];
+        return errors;
     }
 
     blockWithLabel(label) {

@@ -1,6 +1,6 @@
 // -*- mode: js; js-indent-level: 4; indent-tabs-mode: nil -*-
 
-import {Gio} from './dependencies/gi.js';
+import {Gio, GLib} from './dependencies/gi.js';
 import {Main} from './dependencies/shell/ui.js';
 
 import {
@@ -49,6 +49,10 @@ export class NotificationsMonitor {
     }
 
     destroy() {
+        if (this._checkNotificationsId) {
+            GLib.source_remove(this._checkNotificationsId);
+            this._checkNotificationsId = 0;
+        }
         this.emit('destroy');
         this._signalsHandler?.destroy();
         this._signalsHandler = null;
@@ -71,14 +75,28 @@ export class NotificationsMonitor {
     _updateState() {
         if (this.enabled) {
             this._signalsHandler.addWithLabel(Labels.SOURCES, Main.messageTray,
-                'source-added', () => this._checkNotifications());
+                'source-added', () => this._queueCheckNotifications());
             this._signalsHandler.addWithLabel(Labels.SOURCES, Main.messageTray,
-                'source-removed', () => this._checkNotifications());
+                'source-removed', () => this._queueCheckNotifications());
         } else {
             this._signalsHandler.removeWithLabel(Labels.SOURCES);
         }
 
         this._checkNotifications();
+    }
+
+    _queueCheckNotifications() {
+        // Coalesce bursts: routing every source/notification signal straight to
+        // _checkNotifications() rebuilds all connections + recounts on each event
+        // (O(N) per event, O(N^2) over a burst). One idle-batched rebuild per
+        // frame keeps it O(N).
+        if (this._checkNotificationsId)
+            return;
+        this._checkNotificationsId = GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+            this._checkNotificationsId = 0;
+            this._checkNotifications();
+            return GLib.SOURCE_REMOVE;
+        });
     }
 
     _checkNotifications() {
@@ -88,7 +106,11 @@ export class NotificationsMonitor {
         if (this.enabled) {
             Main.messageTray.getSources().forEach(source => {
                 this._signalsHandler.addWithLabel(Labels.NOTIFICATIONS, source,
-                    'notification-added', () => this._checkNotifications());
+                    'notification-added', () => this._queueCheckNotifications());
+                // GlobalSignalsHandler removes every connection to an object
+                // synchronously from its destroy handler, before GObject dispose.
+                this._signalsHandler.addWithLabel(Labels.NOTIFICATIONS, source,
+                    'destroy', () => this._queueCheckNotifications());
 
                 source.notifications.forEach(notification => {
                     const app = notification.source?.app ?? notification.source?._app;
@@ -101,11 +123,11 @@ export class NotificationsMonitor {
 
                             this._signalsHandler.addWithLabel(Labels.NOTIFICATIONS,
                                 notification, 'notify::acknowledged',
-                                () => this._checkNotifications());
+                                () => this._queueCheckNotifications());
                         }
 
                         this._signalsHandler.addWithLabel(Labels.NOTIFICATIONS,
-                            notification, 'destroy', () => this._checkNotifications());
+                            notification, 'destroy', () => this._queueCheckNotifications());
 
                         this._appNotifications[appId] =
                             (this._appNotifications[appId] ?? 0) + 1;

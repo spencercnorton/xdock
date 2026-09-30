@@ -1,34 +1,13 @@
 # Basic Makefile
 
-UUID = dash-to-dock@micxgx.gmail.com
-BASE_MODULES = extension.js \
-               metadata.json \
+UUID = xdock@spencercnorton.github.io
+BASE_MODULES = metadata.json \
                COPYING \
                README.md \
                $(NULL)
 
-EXTRA_MODULES = \
-                appSpread.js \
-                dash.js \
-                docking.js \
-                appIcons.js \
-				appIconsDecorator.js \
-                appIconIndicators.js \
-                fileManager1API.js \
-                imports.js \
-                launcherAPI.js \
-                locations.js \
-                locationsWorker.js \
-                notificationsMonitor.js \
-                windowPreview.js \
-                intellihide.js \
-                prefs.js \
-                theming.js \
-                utils.js \
-                dbusmenuUtils.js \
-                desktopIconsIntegration.js \
-                Settings.ui \
-                $(NULL)
+# Every JavaScript file at the top level is part of the extension.
+EXTRA_MODULES = $(sort $(wildcard *.js))
 
 EXTRA_MEDIA = logo.svg \
               glossy.svg \
@@ -45,40 +24,29 @@ else
 	SHARE_PREFIX = $(DESTDIR)/usr/share
 	INSTALLBASE = $(SHARE_PREFIX)/gnome-shell/extensions
 endif
-INSTALLNAME = dash-to-dock@micxgx.gmail.com
-
-# The command line passed variable VERSION is used to set the version string
-# in the metadata and in the generated zip-file. If no VERSION is passed, the
-# current commit SHA1 is used as version number in the metadata while the
-# generated zip file has no string attached.
-ifdef VERSION
-	VSTRING = _v$(VERSION)
-else
-	VERSION = $(shell git rev-parse HEAD)
-	VSTRING =
-endif
 
 all: extension
 
 clean:
 	rm -f ./schemas/gschemas.compiled
 	rm -f stylesheet.css
+	rm -f ./po/*.mo
 	rm -rf _build
 
 extension: ./schemas/gschemas.compiled ./stylesheet.css $(MSGSRC:.po=.mo)
 
-./schemas/gschemas.compiled: ./schemas/org.gnome.shell.extensions.dash-to-dock.gschema.xml
+./schemas/gschemas.compiled: ./schemas/org.gnome.shell.extensions.xdock.gschema.xml
 	glib-compile-schemas ./schemas/
 
-potfile: ./po/dashtodock.pot
+potfile: ./po/xdock.pot
 
 mergepo: potfile
 	for l in $(MSGSRC); do \
-		msgmerge -U $$l ./po/dashtodock.pot; \
+		msgmerge -U $$l ./po/xdock.pot; \
 	done;
 
-./po/dashtodock.pot: ./po/POTFILES.in
-	xgettext --keyword=__ --keyword=N__ --add-comments='Translators:' -o po/dashtodock.pot --package-name "Dash to Dock" --from-code=utf-8 --files-from=$<
+./po/xdock.pot: ./po/POTFILES.in
+	xgettext --keyword=__ --keyword=N__ --add-comments='Translators:' -o po/xdock.pot --package-name "XDock" --from-code=utf-8 --files-from=$<
 
 ./po/%.mo: ./po/%.po
 	msgfmt -c $< -o $@
@@ -97,27 +65,24 @@ endif
 install: install-local
 
 install-local: _build
-	rm -rf $(INSTALLBASE)/$(INSTALLNAME)
-	mkdir -p $(INSTALLBASE)/$(INSTALLNAME)
-	cp -r ./_build/* $(INSTALLBASE)/$(INSTALLNAME)/
+	rm -rf $(INSTALLBASE)/$(UUID)
+	mkdir -p $(INSTALLBASE)/$(UUID)
+	cp -r ./_build/* $(INSTALLBASE)/$(UUID)/
 ifeq ($(INSTALLTYPE),system)
 	# system-wide settings and locale files
-	rm -r $(INSTALLBASE)/$(INSTALLNAME)/schemas $(INSTALLBASE)/$(INSTALLNAME)/locale
+	rm -r $(INSTALLBASE)/$(UUID)/schemas $(INSTALLBASE)/$(UUID)/locale
 	mkdir -p $(SHARE_PREFIX)/glib-2.0/schemas $(SHARE_PREFIX)/locale
 	cp -r ./schemas/*.gschema.xml $(SHARE_PREFIX)/glib-2.0/schemas
 	cp -r ./_build/locale/* $(SHARE_PREFIX)/locale
-else
-	cp schemas/gschemas.compiled $(INSTALLBASE)/$(INSTALLNAME)/schemas/
 endif
 	-rm -fR _build
 	echo done
 
-zip-file: _build check
-	cd _build ; \
-	zip -qr "$(UUID)$(VSTRING).zip" .
-	mv _build/$(UUID)$(VSTRING).zip ./
-	-rm -fR _build
+uninstall remove:
+	rm -rf $(INSTALLBASE)/$(UUID)
 
+# The extension tree, as the release zip and `make install` ship it. The
+# compiled schema lets a per-user install find its settings.
 _build: all
 	-rm -fR ./_build
 	mkdir -p _build
@@ -127,15 +92,14 @@ _build: all
 	mkdir -p _build/media
 	cd media ; cp $(EXTRA_MEDIA) ../_build/media/
 	mkdir -p _build/schemas
-	cp schemas/*.gschema.xml _build/schemas/
+	cp schemas/*.gschema.xml schemas/gschemas.compiled _build/schemas/
 	mkdir -p _build/locale
 	for l in $(MSGSRC:.po=.mo) ; do \
 		lf=_build/locale/`basename $$l .mo`; \
 		mkdir -p $$lf; \
 		mkdir -p $$lf/LC_MESSAGES; \
-		cp $$l $$lf/LC_MESSAGES/dashtodock.mo; \
+		cp $$l $$lf/LC_MESSAGES/xdock.mo; \
 	done;
-	sed -i 's/"version": -1/"version": "$(VERSION)"/'  _build/metadata.json;
 
 ifeq ($(strip $(ESLINT)),)
     ESLINT = eslint
@@ -145,5 +109,42 @@ ifneq ($(strip $(ESLINT_TAP)),)
     ESLINT_ARGS = -f tap
 endif
 
-check:
+check: test
 	ESLINT_USE_FLAT_CONFIG=false $(ESLINT) $(ESLINT_ARGS) .
+
+check-js:
+	./scripts/check-js.sh .
+
+check-schema:
+	glib-compile-schemas --strict --dry-run ./schemas/
+
+check-translations:
+	./scripts/check-translations.sh
+
+test:
+	node --test tests/*.test.mjs
+
+GJS_TESTS = $(sort $(wildcard tests/*.gjs.mjs))
+
+test-gjs:
+	@test -n "$(GJS_TESTS)" || { \
+		echo "no GJS test harnesses found" >&2; \
+		exit 1; \
+	}
+	@if command -v gjs >/dev/null 2>&1; then \
+		set -e; \
+		for test_file in $(GJS_TESTS); do \
+			gjs -m "$$test_file"; \
+		done; \
+	elif test "$(REQUIRE_GJS)" = 1; then \
+		echo "gjs is required for this verification run" >&2; \
+		exit 1; \
+	else \
+		echo "gjs not installed; skipping GJS fault injection"; \
+	fi
+
+verify: check check-js check-schema check-translations extension test test-gjs
+
+.PHONY: all clean extension potfile mergepo install install-local uninstall \
+	remove _build check check-js check-schema check-translations test \
+	test-gjs verify

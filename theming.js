@@ -15,6 +15,13 @@ import {
     Utils,
 } from './imports.js';
 
+import {
+    connectOwnedSignals,
+    disconnectOwnedSignals,
+    LifecycleState,
+    runCleanupTasks,
+} from './lifecycle.js';
+
 const {signals: Signals} = imports;
 
 /*
@@ -45,15 +52,35 @@ export const PositionStyleClass = Object.freeze([
  */
 export class ThemeManager {
     constructor(dock) {
-        this._signalsHandler = new Utils.GlobalSignalsHandler(this);
-        this._bindSettingsChanges();
+        // Establish cleanup ownership before any signal, style, or child
+        // object can be published. XDock assigns ThemeManager only after
+        // this constructor returns, so rollback must be internal here.
+        this._signalsHandler = null;
+        this._transparency = null;
+        this._shellSettings = null;
         this._actor = dock;
         this._dash = dock.dash;
+        this._destroyed = false;
+        this._lifecycle = new LifecycleState(
+            'theme manager',
+            () => this._cleanup(),
+            (error, operation) => logError(error, `Destroying ${operation}`));
+
+        this._lifecycle.enable(() => this._initialize());
+    }
+
+    _initialize() {
+        // A handler without a parent has no constructor-time external signal.
+        // ThemeManager's lifecycle owns it directly and still listens for the
+        // dock actor's destroy signal below.
+        this._signalsHandler = new Utils.GlobalSignalsHandler();
+        this._shellSettings = St.Settings.get();
+        this._bindSettingsChanges();
 
         // initialize colors with generic values
         this._customizedBackground = {red: 0, green: 0, blue: 0, alpha: 0};
         this._customizedBorder = {red: 0, green: 0, blue: 0, alpha: 0};
-        this._transparency = new Transparency(dock);
+        this._transparency = new Transparency(this._actor);
 
         this._signalsHandler.add([
             // update :overview pseudoclass
@@ -68,6 +95,9 @@ export class ThemeManager {
 
         this._signalsHandler.addWithLabel(Labels.THEME_CHANGED,
             St.ThemeContext.get_for_stage(global.stage), 'changed',
+            () => this.updateCustomTheme());
+        this._signalsHandler.addWithLabel(Labels.THEME_CHANGED,
+            this._shellSettings, 'notify::high-contrast',
             () => this.updateCustomTheme());
 
         const maybeUpdateCustomTheme = () => {
@@ -96,9 +126,24 @@ export class ThemeManager {
     }
 
     destroy() {
-        this.emit('destroy');
-        this._transparency.destroy();
+        return this._lifecycle.destroy();
+    }
+
+    _cleanup() {
         this._destroyed = true;
+        const errors = runCleanupTasks([
+            ['theme manager destroy signal', () => this.emit('destroy')],
+            ['theme transparency', () => this._transparency?.destroy()],
+            ['theme signals', () => this._signalsHandler?.destroy()],
+        ], (error, operation) =>
+            logError(error, `Destroying theme manager ${operation}`));
+
+        this._transparency = null;
+        this._shellSettings = null;
+        this._signalsHandler = null;
+        this._actor = null;
+        this._dash = null;
+        return errors;
     }
 
     _onOverviewShowing() {
@@ -211,9 +256,9 @@ export class ThemeManager {
         const {settings} = Docking.DockManager;
 
         if (settings.applyCustomTheme)
-            this._actor.add_style_class_name('dashtodock');
+            this._actor.add_style_class_name('xdock');
         else
-            this._actor.remove_style_class_name('dashtodock');
+            this._actor.remove_style_class_name('xdock');
 
         if (settings.customThemeShrink)
             this._actor.add_style_class_name('shrink');
@@ -256,8 +301,17 @@ export class ThemeManager {
         this._dash._background.set_style(null);
         this._transparency.disable();
 
-        // If built-in theme is enabled do nothing else
-        if (settings.applyCustomTheme)
+        // High contrast owns the final say over either the built-in or Shell
+        // theme path. Blur My Shell deliberately removes its effect on the
+        // same St.Settings signal, while XDock supplies this opaque
+        // fallback on the contract background actor. Keeping those ownership
+        // boundaries separate prevents either extension from reaching into
+        // the other's private state.
+        const highContrast = this._shellSettings?.high_contrast ?? false;
+
+        // If built-in theme is enabled do nothing else unless accessibility
+        // requires an opaque surface.
+        if (settings.applyCustomTheme && !highContrast)
             return;
 
         let newStyle = '';
@@ -281,6 +335,17 @@ export class ThemeManager {
         }
 
         newStyle = borderMissingStyle;
+
+        if (highContrast) {
+            const backgroundColor = themeNode.get_background_color();
+            newStyle += `background-color: rgba(${backgroundColor.red}, ` +
+                `${backgroundColor.green}, ${backgroundColor.blue}, 1); ` +
+                `border-color: rgba(${borderColor.red}, ${borderColor.green}, ` +
+                `${borderColor.blue}, 1); transition-delay: 0s; ` +
+                'transition-duration: 0ms;';
+            this._dash._background.set_style(newStyle);
+            return;
+        }
 
         if (newStyle) {
             // I do call set_style possibly twice so that only the background gets the transition.
@@ -415,46 +480,84 @@ class Transparency {
     }
 
     disable() {
-        // ensure I never double-register/inject
-        // although it should never happen
-        this._signalsHandler.removeWithLabel(Labels.TRANSPARENCY);
+        const errors = runCleanupTasks([
+            // Ensure repeated enable calls cannot double-register even when a
+            // prior signal disconnection fails partway through.
+            ['transparency signal group', () =>
+                this._signalsHandler.removeWithLabel(Labels.TRANSPARENCY)],
+            ['tracked window signals', () => this._disconnectTrackedWindows()],
+            ['transparency disabled signal', () =>
+                this.emit('transparency-disabled')],
+        ], (error, operation) =>
+            logError(error, `Disabling ${operation}`));
 
-        for (const key of this._trackedWindows.keys()) {
-            this._trackedWindows.get(key).forEach(id => {
-                key.disconnect(id);
-            });
-        }
-        this._trackedWindows.clear();
+        if (errors.length)
+            throw errors[0].error;
+        return errors;
+    }
 
-        this.emit('transparency-disabled');
+    _disconnectTrackedWindows() {
+        const errors = runCleanupTasks(
+            [...this._trackedWindows.keys()].map((actor, actorIndex) => [
+                `window ${actorIndex + 1}`,
+                () => disconnectOwnedSignals(this._trackedWindows, actor,
+                    (error, signalIndex) => logError(error,
+                        `Disconnecting transparency window ${actorIndex + 1} ` +
+                        `signal ${signalIndex}`)),
+            ]),
+            (error, operation) =>
+                logError(error, `Disconnecting transparency ${operation}`));
+        return errors;
     }
 
     destroy() {
-        this.disable();
-        this._signalsHandler.destroy();
+        const errors = runCleanupTasks([
+            ['transparency state', () => this.disable()],
+            ['tracked window signals final attempt', () =>
+                this._disconnectTrackedWindows()],
+            ['transparency signals', () => this._signalsHandler?.destroy()],
+        ], (error, operation) =>
+            logError(error, `Destroying ${operation}`));
+
+        // Do not retain actor references after the final best-effort pass,
+        // even if a disposed actor rejected a stale signal id.
+        this._trackedWindows.clear();
+        return errors;
     }
 
     _onWindowActorAdded(container, metaWindowActor) {
-        const signalIds = [];
-        ['notify::allocation', 'notify::visible'].forEach(s => {
-            signalIds.push(metaWindowActor.connect(s, this._updateSolidStyle.bind(this)));
-        });
-        this._trackedWindows.set(metaWindowActor, signalIds);
+        connectOwnedSignals(this._trackedWindows, metaWindowActor,
+            ['notify::allocation', 'notify::visible'].map(signal => [
+                signal,
+                () => this._onTrackedWindowChanged(),
+            ]), (error, signalIndex) => logError(error,
+                `Rolling back transparency window signal ${signalIndex}`));
     }
 
     _onWindowActorRemoved(container, metaWindowActor) {
         if (!this._trackedWindows.get(metaWindowActor))
             return;
 
-        this._trackedWindows.get(metaWindowActor).forEach(id => {
-            metaWindowActor.disconnect(id);
-        });
-        this._trackedWindows.delete(metaWindowActor);
+        disconnectOwnedSignals(this._trackedWindows, metaWindowActor,
+            (error, signalIndex) => logError(error,
+                `Disconnecting removed transparency window signal ${signalIndex}`));
+        this._updateSolidStyle();
+    }
+
+    _onTrackedWindowChanged() {
+        // Hot path: notify::allocation/visible fire at ~frame rate on every
+        // tracked window during drags/resizes/animations. The near/far state
+        // rarely flips across those, so skip the full set_style + class swap +
+        // emit unless it actually changed. Settings-driven restyles call
+        // _updateSolidStyle() directly and always re-apply.
+        if (this._dockIsNear() === this._lastSolidStyleIsNear)
+            return;
         this._updateSolidStyle();
     }
 
     _updateSolidStyle() {
         const isNear = this._dockIsNear();
+        this._lastSolidStyleIsNear = isNear;
         if (isNear) {
             this._backgroundActor.set_style(this._opaque_style);
             this._dockActor.remove_style_class_name('transparent');
@@ -549,7 +652,7 @@ class Transparency {
     _getAlphas() {
         // Create dummy object and add to the uiGroup to get it to the stage
         const dummyObject = new St.Bin({
-            name: 'dashtodockContainer',
+            name: 'xdockContainer',
         });
         Main.uiGroup.add_child(dummyObject);
 

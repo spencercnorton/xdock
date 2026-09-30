@@ -1,5 +1,7 @@
 ignorePatterns:
   - _build/**
+  - debian/**
+  - dist/**
 
 extends:
  - ./lint/eslintrc-gjs.yml

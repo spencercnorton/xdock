@@ -42,7 +42,27 @@ export class LauncherEntryRemoteModel {
             Gio.DBus.session.signal_unsubscribe(this._dbus_name_owner_changed_signal_id);
 
 
+        // Drop the per-app quicklist DBusMenu.Client proxies and their
+        // root-changed handlers. DockManager recreates this whole model on
+        // every DND toggle, so undisposed clients would pile up between GCs.
+        for (const remoteMap of this._remoteMaps.values()) {
+            for (const remote of remoteMap.values())
+                this._disposeQuicklistClient(remote);
+        }
+        this._remoteMaps.clear();
+
         this._releaseUnityDBus();
+    }
+
+    _disposeQuicklistClient(remote) {
+        const menuClient = remote?._quicklistMenuClient;
+        if (!menuClient)
+            return;
+        if (menuClient._rootChangedHandlerId) {
+            menuClient.disconnect(menuClient._rootChangedHandlerId);
+            menuClient._rootChangedHandlerId = 0;
+        }
+        remote._quicklistMenuClient = null;
     }
 
     _lookupStackById(appId) {
@@ -86,12 +106,27 @@ export class LauncherEntryRemoteModel {
         this._remoteMaps.delete(before);
         if (after && !this._remoteMaps.has(after)) {
             this._remoteMaps.set(after, remoteMap);
+            // D-Bus client endpoints are construct-only. A replacement owner
+            // must advertise a fresh quicklist before it can become visible.
+            for (const [appId, remote] of remoteMap) {
+                this._disposeQuicklistClient(remote);
+                if (remote.quicklist === null)
+                    continue;
+
+                remote.quicklist = null;
+                const sourceStack = this._entrySourceStacks.get(appId);
+                if (sourceStack?.isTop(remote)) {
+                    sourceStack.target.quicklist = null;
+                    sourceStack.target._emitChangedEvents(['quicklist']);
+                }
+            }
         } else {
             for (const [appId, remote] of remoteMap) {
                 const sourceStack = this._entrySourceStacks.get(appId);
                 const changed = sourceStack.remove(remote);
                 if (changed)
                     sourceStack.target._emitChangedEvents(changed);
+                this._disposeQuicklistClient(remote);
             }
         }
     }
@@ -119,22 +154,21 @@ export class LauncherEntryRemoteModel {
                 const quicklistPath = properties[name].unpack();
                 if (quicklistPath &&
                     (!remote._quicklistMenuClient ||
+                     remote._quicklistMenuClient.dbus_name !== senderName ||
                      remote._quicklistMenuClient.dbus_object !== quicklistPath)) {
                     remote.quicklist = null;
-                    let menuClient = remote._quicklistMenuClient;
-                    if (menuClient) {
-                        menuClient.disconnect(menuClient._rootChangedHandlerId);
-                        menuClient.dbus_object = quicklistPath;
-                    } else {
-                        // This property should not be enumerable
-                        Object.defineProperty(remote, '_quicklistMenuClient', {
-                            writable: true,
-                            value: menuClient = new DBusMenu.Client({
-                                dbus_name: senderName,
-                                dbus_object: quicklistPath,
-                            }),
-                        });
-                    }
+                    // Both endpoint properties are construct-only, so a name
+                    // or path change needs a fresh client (issue #2).
+                    this._disposeQuicklistClient(remote);
+                    let menuClient;
+                    // This property should not be enumerable
+                    Object.defineProperty(remote, '_quicklistMenuClient', {
+                        writable: true,
+                        value: menuClient = new DBusMenu.Client({
+                            dbus_name: senderName,
+                            dbus_object: quicklistPath,
+                        }),
+                    });
                     const handler = () => {
                         const root = menuClient.get_root();
                         if (remote.quicklist !== root) {
@@ -168,7 +202,7 @@ const launcherEntryDefaults = Object.freeze({
     'progress-visible': false,
 });
 
-const LauncherEntry = class DashToDockLauncherEntry {
+const LauncherEntry = class XDockLauncherEntry {
     constructor() {
         this._connections = new Map();
         this._handlers = new Map();
@@ -240,7 +274,7 @@ for (const [name, defaultValue] of Object.entries(launcherEntryDefaults)) {
     }
 }
 
-const PropertySourceStack = class DashToDockPropertySourceStack {
+const PropertySourceStack = class XDockPropertySourceStack {
     constructor(target, bottom) {
         this.target = target;
         this._bottom = bottom;

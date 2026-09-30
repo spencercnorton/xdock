@@ -1,0 +1,52 @@
+XDock — provenance and third-party notices
+https://github.com/spencercnorton/xdock
+
+Origin
+------
+XDock is a fork of Dash to Dock, the GNOME Shell dock by Michele Gaio and its
+contributors:
+
+  https://github.com/micheleg/dash-to-dock
+
+It is based on upstream commit 248d42bb64c5e4d21203562f2ef68baf8c9ff083
+(February 2026), whose history this repository keeps unchanged, so every
+upstream line keeps its author there. Dash to Dock is licensed under the GNU
+General Public License, version 2 or (at your option) any later version.
+
+The changes since that commit — the launcher and its drawers, the dock motion,
+the GNOME Shell 50 port, the libadwaita preferences and the XDock name — are
+copyright 2026 Spencer Norton, under the same licence.
+
+Other code in the tree
+----------------------
+- desktopIconsIntegration.js is by Sergio Costas (2021) and is distributed
+  under the one-clause BSD licence in its header, which it keeps.
+- dash.js, theming.js and _stylesheet.scss adapt code and values from GNOME
+  Shell (https://gitlab.gnome.org/GNOME/gnome-shell), GPL-2.0-or-later, as
+  their comments say.
+- lint/eslintrc-gjs.yml is from GJS, copyright 2018 Claudio André,
+  MIT OR LGPL-2.0-or-later, as its SPDX header says. It is used only to lint
+  the source and is not part of the extension.
+
+Artwork
+-------
+Every file in media/, with its author and licence. None is traced from, or
+contains, third-party or commercial artwork.
+
+- media/logo.svg: the Dash to Dock logo, drawn by Michele Gaio (2015),
+  GPL-2.0-or-later. XDock changes only the name on it, which reads "XDock"
+  instead of "Dash to Dock"; the author credit on the logo, "Michele", is
+  unchanged.
+- media/glossy.svg: the glossy running-indicator backlight, by Sven Hagemann
+  (2017), GPL-2.0-or-later.
+- media/highlight_stacked_bg.svg and media/highlight_stacked_bg_h.svg: the
+  "metro" indicator backgrounds, by Michele Gaio (2017), GPL-2.0-or-later.
+
+Translations
+------------
+The catalogues in po/ are Dash to Dock's, by the translators named in each
+file's header, GPL-2.0-or-later. XDock changed only the product name in them.
+
+Licence
+-------
+GPL-2.0-or-later. The full licence text is in COPYING.

@@ -1,0 +1,2 @@
+# The extension starts it as `gjs -m locationsWorker.js`; it is not a command.
+gnome-shell-extension-xdock: script-not-executable [usr/share/gnome-shell/extensions/xdock@spencercnorton.github.io/locationsWorker.js]

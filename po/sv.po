@@ -1,6 +1,6 @@
-# Swedish translation for dash-to-dock.
-# Copyright © 2020 dash-to-dock's COPYRIGHT HOLDER
-# This file is distributed under the same license as the dash-to-dock package.
+# Swedish translation for xdock.
+# Copyright © 2020 xdock's COPYRIGHT HOLDER
+# This file is distributed under the same license as the xdock package.
 # Anders Jonsson <anders.jonsson@norsjovallen.se>, 2016.
 # Morgan Antonsson <morgan.antonsson@gmail.com>, 2020.
 #
@@ -124,8 +124,8 @@ msgstr[0] "Stäng %d fönster"
 msgstr[1] "Stäng %d fönster"
 
 #: appIcons.js:1511
-msgid "Dash to Dock"
-msgstr "Dash to Dock"
+msgid "XDock"
+msgstr "XDock"
 
 #: appIcons.js:1513
 msgid "Settings"

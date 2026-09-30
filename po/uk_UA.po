@@ -1,8 +1,8 @@
-# Ukrainian translation for dash-to-dock GNOME Shell extension
+# Ukrainian translation for xdock GNOME Shell extension
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: dash-to-dock\n"
+"Project-Id-Version: xdock\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2024-12-11 22:05+0200\n"
 "PO-Revision-Date: 2024-12-11 22:35+0200\n"
@@ -126,8 +126,8 @@ msgstr[2] "Закрити %d вікон"
 #. can also translate the full message if this fits better your language.
 #: appIcons.js:1513
 #, javascript-format
-msgid "Dash to Dock %s"
-msgstr "%s Dash to Dock"
+msgid "XDock %s"
+msgstr "%s XDock"
 
 #: appIcons.js:1513
 msgid "Settings"

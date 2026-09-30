@@ -1,10 +1,10 @@
-# Dash to Dock Basque translation.
-# This file is distributed under the same license as the Dash to Dock package.
+# XDock Basque translation.
+# This file is distributed under the same license as the XDock package.
 # Ibai Oihanguren Sala <ibaios@disroot.org>, 2020-2026.
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: Dash To Dock\n"
+"Project-Id-Version: XDock\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-05-13 21:49+0200\n"
 "PO-Revision-Date: 2026-05-13 22:19+0200\n"
@@ -125,8 +125,8 @@ msgstr[0] "Itxi leihoa"
 msgstr[1] "Itxi %d leihoak"
 
 #: appIcons.js:1560
-msgid "Dash to Dock"
-msgstr "Dash to Dock"
+msgid "XDock"
+msgstr "XDock"
 
 #: appIcons.js:1562
 msgid "Settings"

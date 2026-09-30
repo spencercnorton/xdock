@@ -1,11 +1,11 @@
-# Georgian translation for dashtodock.
-# Copyright (C) 2026 dashtodock's authors.
-# This file is distributed under the same license as the dashtodock package.
+# Georgian translation for xdock.
+# Copyright (C) 2026 xdock's authors.
+# This file is distributed under the same license as the xdock package.
 # Ekaterine Papava <papava.e@gtu.ge>, 2026.
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: dashtodock\n"
+"Project-Id-Version: xdock\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-02-23 13:11+0100\n"
 "PO-Revision-Date: 2026-02-23 15:25+0100\n"
@@ -123,8 +123,8 @@ msgstr[0] "%d ფანჯრიდან გასვლა"
 msgstr[1] "%d ფანჯრიდან გასვლა"
 
 #: appIcons.js:1554
-msgid "Dash to Dock"
-msgstr "Dash to Dock"
+msgid "XDock"
+msgstr "XDock"
 
 #: appIcons.js:1556
 msgid "Settings"

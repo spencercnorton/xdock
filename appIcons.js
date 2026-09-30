@@ -14,7 +14,6 @@ import {
 import {
     AppDisplay,
     AppFavorites,
-    BoxPointer,
     Dash,
     Main,
     PopupMenu,
@@ -30,6 +29,8 @@ import {
     DBusMenuUtils,
     Docking,
     Locations,
+    Motion,
+    PopupMenuUtils,
     Theming,
     Utils,
     WindowPreview,
@@ -74,6 +75,29 @@ const scrollAction = Object.freeze({
 
 // module "Dash" did not export DASH_ITEM_LABEL_SHOW_TIME, so let's define it.
 const DASH_ITEM_LABEL_SHOW_TIME = Dash.DASH_ITEM_LABEL_SHOW_TIME ?? 150;
+
+// motion_ms.fast. Hover and press are direct answers to the pointer, so they
+// take the shortest step on the scale; anything slower reads as lag rather
+// than feedback.
+const ICON_MOTION_TIME = 190;
+
+// Which way "up" is for a lifted icon: away from the screen edge the dock is
+// docked against. Lives here rather than in motion.js because this is the only
+// side that knows St.Side, which keeps planIconMotion() testable under node.
+// The launch hop: how far the icon rises, and the two legs of the arc.
+// Rising is an enter (motion_ms.fast) and falling is an exit
+// (motion_ms.standard), which is also the right physics -- you decelerate on
+// the way up and accelerate on the way down.
+const ICON_LAUNCH_HOP = 10;
+const ICON_LAUNCH_RISE_TIME = 190;
+const ICON_LAUNCH_FALL_TIME = 250;
+
+const ICON_LIFT_VECTOR = Object.freeze({
+    [St.Side.TOP]: [0, 1],
+    [St.Side.BOTTOM]: [0, -1],
+    [St.Side.LEFT]: [1, 0],
+    [St.Side.RIGHT]: [-1, 0],
+});
 
 let recentlyClickedAppLoopId = 0;
 let recentlyClickedApp = null;
@@ -183,27 +207,56 @@ export const DockAbstractAppIcon = GObject.registerClass({
         const {notificationsMonitor} = Docking.DockManager.getDefault();
 
         this.connect('notify::urgent', () => {
-            const icon = this.icon._iconBin;
+            // Bounces _iconContainer, one level up from the _iconBin the old
+            // rotation used. Hover and press own the bin's transform and the
+            // launch hop owns the BaseIcon's, so this needs its own actor or
+            // an urgent app that is also hovered would fight over one
+            // translation. _iconContainer is still a non-reactive descendant of
+            // the reactive button, so picking is untouched, and the indicator
+            // dots ride along with the icon rather than being left behind.
+            const icon = this._iconContainer;
             this._signalsHandler.removeWithLabel(Labels.URGENT_WINDOWS);
             if (this.urgent) {
                 if (Docking.DockManager.settings.danceUrgentApplications &&
-                    notificationsMonitor.enabled) {
-                    icon.set_pivot_point(0.5, 0.5);
-                    this.iconAnimator.addAnimation(icon, 'wiggle');
-                }
+                    notificationsMonitor.enabled)
+                    this.iconAnimator.addAnimation(icon, 'bounce');
+
                 if (this.running && !this._urgentWindows.size) {
                     const urgentWindows = this.getInterestingWindows();
                     urgentWindows.forEach(w => (w._manualUrgency = true));
                     this._updateUrgentWindows(urgentWindows);
                 }
             } else {
-                this.iconAnimator.removeAnimation(icon, 'wiggle');
-                icon.rotation_angle_z = 0;
+                this.iconAnimator.removeAnimation(icon, 'bounce');
+                icon.translation_x = 0;
+                icon.translation_y = 0;
                 this._urgentWindows.forEach(w => delete w._manualUrgency);
                 this._updateUrgentWindows();
             }
         });
         this.notify('urgent');
+
+        // Hover and press feedback. This transforms this.icon._iconBin -- a
+        // DESCENDANT of the reactive St.Button -- and never the button itself
+        // or its DashItemContainer. That distinction is the whole feature:
+        // measured on Clutter 18, a fixed stage point picked a DIFFERENT icon
+        // once the reactive actor was translated or scaled, while the same
+        // transform on a non-reactive child left picking exactly where the
+        // layout put it. Transforming the reactive side is what made an
+        // earlier hover-magnification prototype tremble, mis-target and fight
+        // its own leave handler. _iconBin is upstream-private, but the urgent
+        // wiggle above already depends on it, so this adds no new coupling --
+        // and it uses the same (0.5, 0.5) pivot, so the two never fight over
+        // it.
+        //
+        // Driven off St.Button's own `hover` and `pressed` properties rather
+        // than button-press/release events: measured here, St.Button claims the
+        // press through a Clutter 18 gesture, so `button-release-event` never
+        // reaches a handler on the actor and the icon stayed shrunk after every
+        // click. The properties are maintained by St.Button whatever route the
+        // events take, including when a press turns into a drag.
+        this._signalsHandler.add(this, 'notify::hover', () => this._updateIconMotion());
+        this._signalsHandler.add(this, 'notify::pressed', () => this._updateIconMotion());
 
         this._progressOverlayArea = null;
         this._progress = 0;
@@ -236,13 +289,85 @@ export const DockAbstractAppIcon = GObject.registerClass({
         this._previewMenu = null;
     }
 
+    // The inherited animateLaunch() is GNOME's OVERVIEW feedback: it clones the
+    // icon, scales the clone up and fades it out. In the overview the original
+    // is going away, so that reads correctly; on a dock the icon stays exactly
+    // where it is, so the same animation reads as the icon vanishing rather
+    // than as the app starting. A hop is the dock idiom, and it falls out of
+    // the motion tokens exactly -- no overshoot curve, so no motion-exception.
+    //
+    // Hops this.icon (the BaseIcon), NOT this.icon._iconBin: hover and press
+    // own the bin's transform and two animations writing one translation would
+    // fight. The BaseIcon is the bin's parent and equally a non-reactive
+    // descendant of the reactive button, so the two compose for free and
+    // picking is still untouched. The indicator dots are siblings of the
+    // BaseIcon, so they stay put while the icon hops over them.
+    animateLaunch() {
+        const {icon} = this;
+        // Reduced motion gets no hop at all rather than an instant one: a hop
+        // with no duration is not feedback, it is a no-op with extra steps.
+        if (!icon || !St.Settings.get().enable_animations)
+            return;
+
+        const [dx, dy] = ICON_LIFT_VECTOR[Utils.getPosition()] ??
+            ICON_LIFT_VECTOR[St.Side.BOTTOM];
+
+        // A second launch mid-hop restarts from wherever the icon currently is.
+        // remove_all_transitions() suppresses the first hop's onComplete, so
+        // the two arcs cannot both be scheduling a fall.
+        icon.remove_all_transitions();
+        icon.ease({
+            translation_x: ICON_LAUNCH_HOP * dx,
+            translation_y: ICON_LAUNCH_HOP * dy,
+            duration: ICON_LAUNCH_RISE_TIME,
+            mode: Clutter.AnimationMode.EASE_OUT_CUBIC,
+            onComplete: () => icon.ease({
+                translation_x: 0,
+                translation_y: 0,
+                duration: ICON_LAUNCH_FALL_TIME,
+                mode: Clutter.AnimationMode.EASE_IN_CUBIC,
+            }),
+        });
+    }
+
+    _updateIconMotion() {
+        const iconBin = this.icon?._iconBin;
+        if (!iconBin)
+            return;
+
+        const {scale, lift} = Motion.planIconMotion({
+            hovered: this.hover,
+            pressed: this.pressed,
+        });
+        const [dx, dy] = ICON_LIFT_VECTOR[Utils.getPosition()] ??
+            ICON_LIFT_VECTOR[St.Side.BOTTOM];
+        // motion_easing is reversible: taking on a state is an enter, returning
+        // to rest is an exit.
+        const resting = scale === 1 && lift === 0;
+
+        iconBin.set_pivot_point(0.5, 0.5);
+        iconBin.ease({
+            scale_x: scale,
+            scale_y: scale,
+            translation_x: lift * dx,
+            translation_y: lift * dy,
+            // ease() applies Shell's slow-down factor itself; only the reduced
+            // motion case zeroes the base duration (motion_ms.reduced).
+            duration: St.Settings.get().enable_animations ? ICON_MOTION_TIME : 0,
+            mode: resting
+                ? Clutter.AnimationMode.EASE_IN_CUBIC
+                : Clutter.AnimationMode.EASE_OUT_CUBIC,
+        });
+    }
+
     _onDestroy() {
         super._onDestroy();
 
         // This is necessary due to an upstream bug
         // https://bugzilla.gnome.org/show_bug.cgi?id=757556
         // It can be safely removed once it get solved upstream.
-        this._menu?.close(false);
+        if (this._menu)
+            PopupMenuUtils.close(this._menu, {animate: false});
         delete this._menu;
     }
 
@@ -565,7 +690,7 @@ export const DockAbstractAppIcon = GObject.registerClass({
                         // minimize all windows on double click and always in
                         // the case of primary click without additional modifiers
                         let clickCount = 0;
-                        if (Clutter.EventType.CLUTTER_BUTTON_PRESS)
+                        if (event?.type() === Clutter.EventType.BUTTON_PRESS)
                             clickCount = event.get_click_count();
                         const allWindows = (button === 1 && !modifiers) || clickCount > 1;
                         this._minimizeWindow(allWindows);
@@ -956,6 +1081,15 @@ export const DockAbstractAppIcon = GObject.registerClass({
 
 const DockAppIcon = GObject.registerClass({
 }, class DockAppIcon extends DockAbstractAppIcon {
+    // Marks a source actor DockAppIconMenu may offer favourite and app-details
+    // actions for. This was previously spelled `instanceof DockAppIcon`, which
+    // correctly excluded DockLocationAppIcon (a mounted volume is not pinnable)
+    // but also excluded the launcher's AppIcon-derived results, so "Pin to
+    // Dock" never appeared in a launcher result's menu.
+    get canManageFavorites() {
+        return true;
+    }
+
     _init(app, monitorIndex, iconAnimator) {
         super._init(app, monitorIndex, iconAnimator);
 
@@ -1016,7 +1150,7 @@ export function makeAppIcon(app, monitorIndex, iconAnimator) {
  * - Add open windows thumbnails instead of list
  * - update menu when application windows change
  */
-const DockAppIconMenu = class DockAppIconMenu extends PopupMenu.PopupMenu {
+export const DockAppIconMenu = class DockAppIconMenu extends PopupMenu.PopupMenu {
     constructor(source) {
         super(source, 0.5, Utils.getPosition());
 
@@ -1080,7 +1214,7 @@ const DockAppIconMenu = class DockAppIconMenu extends PopupMenu.PopupMenu {
 
     popup(_activatingButton) {
         this._rebuildMenu();
-        this.open(BoxPointer.PopupAnimation.FULL);
+        PopupMenuUtils.open(this);
     }
 
     removeAll() {
@@ -1176,7 +1310,7 @@ const DockAppIconMenu = class DockAppIconMenu extends PopupMenu.PopupMenu {
             }
 
             const canFavorite = global.settings.is_writable('favorite-apps') &&
-                (this.sourceActor instanceof DockAppIcon) &&
+                this.sourceActor?.canManageFavorites === true &&
                 ParentalControlsManager.getDefault().shouldShowApp(app.appInfo);
 
             if (canFavorite) {
@@ -1199,7 +1333,7 @@ const DockAppIconMenu = class DockAppIconMenu extends PopupMenu.PopupMenu {
             }
 
             if (Shell.AppSystem.get_default().lookup_app('org.gnome.Software.desktop') &&
-                this.sourceActor instanceof DockAppIcon &&
+                this.sourceActor?.canManageFavorites === true &&
                 !this.sourceActor.getSnapName()) {
                 this._appendSeparator();
                 const item = this._appendMenuItem(_('App Details'));
@@ -1220,7 +1354,7 @@ const DockAppIconMenu = class DockAppIconMenu extends PopupMenu.PopupMenu {
                 });
             }
 
-            if (this.sourceActor instanceof DockAppIcon) {
+            if (this.sourceActor?.canManageFavorites === true) {
                 const snapName = this.sourceActor.getSnapName();
                 const snapStore = snapName
                     ? Shell.AppSystem.get_default().lookup_app(
@@ -1557,7 +1691,7 @@ class DockShowAppsIconMenu extends DockAppIconMenu {
     _rebuildMenu() {
         this.removeAll();
 
-        this.addMenuItem(new PopupMenu.PopupSeparatorMenuItem(__('Dash to Dock')));
+        this.addMenuItem(new PopupMenu.PopupSeparatorMenuItem(__('XDock')));
 
         const item = this._appendMenuItem(_('Settings'));
         item.connect('activate', () =>
@@ -1635,7 +1769,7 @@ export function itemShowLabel() {
     this.label.ease({
         opacity: 255,
         duration: DASH_ITEM_LABEL_SHOW_TIME,
-        mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+        mode: Clutter.AnimationMode.EASE_OUT_CUBIC,
     });
     /* eslint-enable no-invalid-this */
 }

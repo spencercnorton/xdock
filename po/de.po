@@ -1,6 +1,6 @@
 # Translation for German (de)
 # Copyright (C) 2014 Michele
-# This file is distributed under the same license as the dash-to-dock package.
+# This file is distributed under the same license as the xdock package.
 # Morris Jobke <hey@morrisjobke.de>, 2014
 # Jonatan Zeidler <jonatan_zeidler@hotmail.de>, 2012
 # jonius <jonatan_zeidler@gmx.de>, 2012
@@ -8,7 +8,7 @@
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: Dash to Dock\n"
+"Project-Id-Version: XDock\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2025-07-13 00:20+0200\n"
 "PO-Revision-Date: 2025-07-13 00:26+0200\n"
@@ -130,8 +130,8 @@ msgstr[0] "%d Fenster beenden"
 msgstr[1] "%d Fenster beenden"
 
 #: appIcons.js:1511
-msgid "Dash to Dock"
-msgstr "Dash-to-Dock"
+msgid "XDock"
+msgstr "XDock"
 
 #: appIcons.js:1513
 msgid "Settings"

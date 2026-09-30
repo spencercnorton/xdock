@@ -1,0 +1,7 @@
+gnome-shell-extension-xdock (2.0.0) resolute; urgency=medium
+
+  * First public release. The UUID is now xdock@spencercnorton.github.io;
+    the settings schema, org.gnome.shell.extensions.xdock, is unchanged, so
+    existing settings carry over.
+
+ -- Norvi <apt@globalentry.systems>  Wed, 30 Sep 2026 00:00:00 +0000

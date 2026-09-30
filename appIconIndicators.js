@@ -12,6 +12,7 @@ import {Main} from './dependencies/shell/ui.js';
 
 import {
     Docking,
+    Motion,
     Utils,
 } from './imports.js';
 
@@ -31,6 +32,10 @@ const RunningIndicatorStyle = Object.freeze({
 });
 
 const MAX_WINDOWS_CLASSES = 4;
+
+// motion_ms.fast. The dot appearing is the most-seen state change in the dock,
+// and it used to pop; this is the smallest step that stops it being a pop.
+const INDICATOR_FADE_TIME = 190;
 
 
 /*
@@ -297,6 +302,10 @@ class RunningIndicatorDots extends RunningIndicatorBase {
         this._area.connectObject('repaint', this._updateIndicator.bind(this), this);
         this._source._iconContainer.add_child(this._area);
 
+        // Seeded from the live state so an icon built for an already-running
+        // app shows its dot immediately instead of fading one in at startup.
+        this._indicatorVisible = !!this._source.running;
+
         const keys = ['custom-theme-running-dots-color',
             'custom-theme-running-dots-border-color',
             'custom-theme-running-dots-border-width',
@@ -323,7 +332,63 @@ class RunningIndicatorDots extends RunningIndicatorBase {
 
     update() {
         super.update();
+        this._syncBacklight();
 
+        // The base constructor calls update() before this subclass has built
+        // its drawing area.
+        if (!this._area)
+            return;
+
+        const running = !!this._source.running;
+        const transition = Motion.planIndicatorTransition({
+            wasVisible: this._indicatorVisible,
+            running,
+        });
+        this._indicatorVisible = running;
+
+        // A same-visibility update must not touch the opacity or the running
+        // transition. notify::focused fires alongside notify::running, so a
+        // REPAINT that reset either would snap every reveal to full opacity
+        // ~60ms in and turn the fade into a pop.
+        if (transition === Motion.IndicatorTransition.REPAINT) {
+            this._area.queue_repaint();
+            return;
+        }
+
+        this._area.remove_all_transitions();
+
+        if (transition === Motion.IndicatorTransition.REVEAL) {
+            // Draw first, then fade up: there has to be a dot on the canvas
+            // before there is anything to reveal. Safe against the repaints
+            // that land mid-fade from the source icon's own notify::running
+            // style change, because those redraw the dot rather than erase it.
+            this._area.opacity = 0;
+            this._area.queue_repaint();
+            this._area.ease({
+                opacity: 255,
+                duration: St.Settings.get().enable_animations
+                    ? INDICATOR_FADE_TIME : 0,
+                mode: Clutter.AnimationMode.EASE_OUT_CUBIC,
+            });
+            return;
+        }
+
+        // HIDE. Instant, and that is a measured limit rather than an oversight:
+        // a fade-out has to keep showing a dot the live state has already
+        // dropped, and it cannot. St.DrawingArea clears its surface whenever it
+        // is invalidated, whether or not the repaint handler draws -- pinned
+        // opaque with the draw suppressed, the dot still vanished -- and the
+        // source icon's own notify::running handler invalidates the area ~3ms
+        // in. Anything that did work here would mean lying to all eight
+        // _drawIndicator() overrides about the running state.
+        //
+        // Resetting opacity matters: an interrupted reveal can leave it
+        // part-way, and the next reveal would then fade up from there.
+        this._area.opacity = 255;
+        this._area.queue_repaint();
+    }
+
+    _syncBacklight() {
         // Enable / Disable the backlight of running apps
         if (!Docking.DockManager.settings.applyCustomTheme &&
             Docking.DockManager.settings.unityBacklitItems) {
@@ -339,9 +404,6 @@ class RunningIndicatorDots extends RunningIndicatorBase {
             this._disableBacklight();
             this._source._iconContainer.get_children()[1].set_style(null);
         }
-
-        if (this._area)
-            this._area.queue_repaint();
     }
 
     _computeStyle() {
@@ -436,6 +498,9 @@ class RunningIndicatorDots extends RunningIndicatorBase {
     }
 
     destroy() {
+        // Before destroy(), so the pending fade-out's onComplete never runs
+        // against an area that is on its way out.
+        this._area.remove_all_transitions();
         this._area.destroy();
         delete this._area;
         super.destroy();
@@ -626,8 +691,14 @@ class RunningIndicatorMetro extends RunningIndicatorDots {
                 const blackenedLength = (1 / 48) * this._width;
                 const darkenedLength = this._source.focused
                     ? (2 / 48) * this._width : (10 / 48) * this._width;
-                const blackenedColor = this._bodyColor.shade(.3);
-                const darkenedColor = this._bodyColor.shade(.7);
+                // this._bodyColor may be a Cogl.Color (GNOME 47+) which has no
+                // shade(); derive darker shades via a version-safe luminance scale.
+                const Color = Clutter.Color ?? Cogl.Color;
+                const {red, green, blue} = this._bodyColor;
+                const [, blackenedColor] =
+                    Color.from_string(Utils.ColorUtils.ColorLuminance(red, green, blue, -0.7));
+                const [, darkenedColor] =
+                    Color.from_string(Utils.ColorUtils.ColorLuminance(red, green, blue, -0.3));
 
                 cr.translate(0, yOffset);
 
@@ -1011,7 +1082,9 @@ export class UnityIndicator extends IndicatorBase {
     }
 
     _drawProgressOverlay(area) {
-        const {scaleFactor} = St.ThemeContext.get_for_stage(global.stage);
+        // DrawingArea surfaces are allocated at the actor's resource scale,
+        // which can differ from the stage-global scale on mixed-DPI layouts.
+        const scaleFactor = area.get_resource_scale();
         const [surfaceWidth, surfaceHeight] = area.get_surface_size();
         const cr = area.get_context();
         const node = this._progressOverlayArea.get_theme_node();

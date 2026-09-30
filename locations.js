@@ -322,30 +322,76 @@ export const LocationAppInfo = GObject.registerClass({
         }
     }
 
-    async _getHandlerAppAsync(cancellable) {
-        if (!this.location)
+    async _getHandlerAppAsync(location, cancellable) {
+        if (!location)
             return null;
 
-        try {
-            if (!GJS_SUPPORTS_FILE_IFACE_PROMISES) {
-                Gio._promisify(this.location.constructor.prototype,
-                    'query_default_handler_async',
-                    'query_default_handler_finish');
-            }
-
-            return await this.location.query_default_handler_async(
-                GLib.PRIORITY_DEFAULT, cancellable);
-        } catch (e) {
-            if (e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.NOT_MOUNTED))
-                return getFileManagerApp()?.appInfo;
-
-            if (!e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED)) {
-                logError(e, 'Impossible to find an URI handler for %s'.format(
-                    this.get_id()));
-            }
-
-            throw e;
+        if (!GJS_SUPPORTS_FILE_IFACE_PROMISES) {
+            Gio._promisify(location.constructor.prototype,
+                'query_default_handler_async',
+                'query_default_handler_finish');
         }
+
+        // Throws on error (NOT_MOUNTED, etc.) — callers decide fallback/caching.
+        const handlerApp = await location.query_default_handler_async(
+            GLib.PRIORITY_DEFAULT, cancellable);
+        return handlerApp;
+    }
+
+    prewarmHandlerApp() {
+        // Populate the handler-app cache off the main thread so the synchronous
+        // getHandlerApp() (called from vfunc_launch / vfunc_get_commandline /
+        // can_open_new_window, none of which can await) hits the cache instead
+        // of blocking the compositor on the bounded gjs worker subprocess. The
+        // sync path stays as the fallback if a caller beats this pre-warm.
+        const {location} = this;
+        if (this._handlerApp)
+            return Promise.resolve(this._handlerApp);
+        if (!location)
+            return Promise.resolve(null);
+
+        const previousRequest = this._handlerAppRequest;
+        if (previousRequest?.location.equal(location))
+            return previousRequest.promise;
+        previousRequest?.cancellable.cancel();
+
+        const cancellable = new Utils.CancellableChild(this.cancellable);
+        const request = {location, cancellable, promise: null, timeoutId: 0};
+        this._handlerAppRequest = request;
+        request.promise = Promise.race([
+            this._getHandlerAppAsync(location, cancellable),
+            new Promise(resolve => {
+                request.timeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT,
+                    LAUNCH_HANDLER_MAX_WAIT, () => {
+                        request.timeoutId = 0;
+                        cancellable.cancel();
+                        resolve(null);
+                        return GLib.SOURCE_REMOVE;
+                    });
+            }),
+        ]).then(app => {
+            // Only cache a result for the location that was queried, and only
+            // cache a real default handler — the NOT_MOUNTED file-manager
+            // fallback would go stale once the volume mounts.
+            if (this._handlerAppRequest !== request ||
+                !this.location?.equal(location))
+                return null;
+            if (app && !this._handlerApp)
+                this._handlerApp = app;
+            return app;
+        }).catch(() => {
+            // Best-effort: on NOT_MOUNTED / cancel / any error, leave the cache
+            // empty so the sync getHandlerApp() path (with its fallback) runs.
+            return null;
+        }).finally(() => {
+            if (request.timeoutId)
+                GLib.source_remove(request.timeoutId);
+            request.timeoutId = 0;
+            cancellable.cancel();
+            if (this._handlerAppRequest === request)
+                this._handlerAppRequest = null;
+        });
+        return request.promise;
     }
 
     _getHandlerAppFromWorker(cancellable) {
@@ -416,6 +462,8 @@ export const LocationAppInfo = GObject.registerClass({
     }
 
     destroy() {
+        this._handlerAppRequest?.cancellable.cancel();
+        this._handlerAppRequest = null;
         this.location = null;
         this.icon = null;
         this.name = null;
@@ -562,8 +610,17 @@ class MountableVolumeAppInfo extends LocationAppInfo {
         this.name = removable.get_name();
         this.icon = removable.get_icon();
 
-        this.location = this.mount?.get_default_location() ??
+        const location = this.mount?.get_default_location() ??
             this.volume.get_activation_root();
+        const locationChanged = this.location && location
+            ? !this.location.equal(location)
+            : this.location !== location;
+        if (locationChanged) {
+            this._handlerApp = null;
+            this._handlerAppRequest?.cancellable.cancel();
+        }
+        this.location = location;
+        this.prewarmHandlerApp();
 
         this._updateLocationIcon({custom: true});
     }
@@ -588,6 +645,12 @@ class MountableVolumeAppInfo extends LocationAppInfo {
             await this.launchAction(RemovableAction.MOUNT);
             if (!this.mount) {
                 throw new Error('No mounted location to open for %s'.format(
+                    this.get_id()));
+            }
+
+            await this.prewarmHandlerApp();
+            if (!this.mount || !this.location) {
+                throw new Error('Mounted location disappeared for %s'.format(
                     this.get_id()));
             }
 
@@ -619,7 +682,7 @@ class MountableVolumeAppInfo extends LocationAppInfo {
 
     async launchAction(action) {
         if (!this.list_actions().includes(action))
-            throw new Error('Action %s is not supported by %s', action, this);
+            throw new Error('Action %s is not supported by %s'.format(action, this));
 
         switch (this._currentAction) {
         case RemovableAction.MOUNT:
@@ -843,7 +906,7 @@ class TrashAppInfo extends LocationAppInfo {
                 logError(e, 'Impossible to get trash children from infos');
         } finally {
             cancellable.cancel();
-            if (this._updateIconCancellable === cancellable)
+            if (this._updateTrashCancellable === cancellable)
                 delete this._updateTrashCancellable;
         }
 
@@ -861,14 +924,14 @@ class TrashAppInfo extends LocationAppInfo {
                 logError(e, 'Impossible to enumerate trash children');
         } finally {
             cancellable.cancel();
-            if (this._updateIconCancellable === cancellable)
+            if (this._updateTrashCancellable === cancellable)
                 delete this._updateTrashCancellable;
         }
     }
 
     launchAction(action, timestamp) {
         if (!this.list_actions().includes(action))
-            throw new Error('Action %s is not supported by %s', action, this);
+            throw new Error('Action %s is not supported by %s'.format(action, this));
 
         const nautilus = makeNautilusFileOperationsProxy();
         const askConfirmation = true;
@@ -1338,8 +1401,10 @@ export class Trash {
         if (this._trashApp)
             return;
 
+        const appInfo = new TrashAppInfo(new Gio.Cancellable());
+        appInfo.prewarmHandlerApp();
         this._trashApp = makeLocationApp({
-            appInfo: new TrashAppInfo(new Gio.Cancellable()),
+            appInfo,
             fallbackIconName: FALLBACK_TRASH_ICON,
         });
     }
@@ -1359,26 +1424,26 @@ export class Removables {
     static initVolumePromises(object) {
         // TODO: This can be simplified using actual interface type when we
         // can depend on gjs 1.72
-        if (!(object instanceof Gio.Volume) || object.constructor.prototype._d2dPromisified)
+        if (!(object instanceof Gio.Volume) || object.constructor.prototype._xdockPromisified)
             return;
 
         Gio._promisify(object.constructor.prototype, 'mount', 'mount_finish');
         Gio._promisify(object.constructor.prototype, 'eject_with_operation',
             'eject_with_operation_finish');
-        object.constructor.prototype._d2dPromisified = true;
+        object.constructor.prototype._xdockPromisified = true;
     }
 
     static initMountPromises(object) {
         // TODO: This can be simplified using actual interface type when we
         // can depend on gjs 1.72
-        if (!(object instanceof Gio.Mount) || object.constructor.prototype._d2dPromisified)
+        if (!(object instanceof Gio.Mount) || object.constructor.prototype._xdockPromisified)
             return;
 
         Gio._promisify(object.constructor.prototype, 'eject_with_operation',
             'eject_with_operation_finish');
         Gio._promisify(object.constructor.prototype, 'unmount_with_operation',
             'unmount_with_operation_finish');
-        object.constructor.prototype._d2dPromisified = true;
+        object.constructor.prototype._xdockPromisified = true;
     }
 
     constructor() {

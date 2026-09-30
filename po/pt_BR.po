@@ -1,4 +1,4 @@
-# Dash-to-Dock Brazilian Portuguese translation.
+# XDock Brazilian Portuguese translation.
 # Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
 # This file is distributed under the same license as the PACKAGE package.
 # Carlos Alberto Junior Spohr Poletto <carlos.spohr@gmail.com>, 2012.
@@ -8,7 +8,7 @@
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: Dash to Dock\n"
+"Project-Id-Version: XDock\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2022-05-24 21:07-0300\n"
 "PO-Revision-Date: 2022-05-24 22:08-0300\n"
@@ -128,8 +128,8 @@ msgstr[0] "Fechar %d janela"
 msgstr[1] "Fechar %d janelas"
 
 #: appIcons.js:1511
-msgid "Dash to Dock"
-msgstr "Dash to Dock"
+msgid "XDock"
+msgstr "XDock"
 
 #: appIcons.js:1513
 msgid "Settings"
@@ -139,8 +139,8 @@ msgstr "Configurações"
 #. can also translate the full message if this fits better your language.
 #: appIcons.js:1336
 #, javascript-format
-msgid "Dash to Dock %s"
-msgstr "%s do Dash to Dock"
+msgid "XDock %s"
+msgstr "%s do XDock"
 
 #: locations.js:422
 msgid "Mount"

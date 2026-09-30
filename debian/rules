@@ -1,0 +1,13 @@
+#!/usr/bin/make -f
+%:
+	dh $@
+
+# The checks need Node.js, GJS and ESLint, and run before packaging, in CI
+# (make verify).
+override_dh_auto_test:
+
+# Debian keeps the licence in /usr/share/doc; the extension directory holds
+# only what GNOME Shell loads.
+execute_after_dh_auto_install:
+	rm debian/gnome-shell-extension-xdock/usr/share/gnome-shell/extensions/xdock@spencercnorton.github.io/COPYING \
+		debian/gnome-shell-extension-xdock/usr/share/gnome-shell/extensions/xdock@spencercnorton.github.io/README.md

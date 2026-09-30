@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<schemalist gettext-domain="gnome-shell-extensions">
-  <enum id='org.gnome.shell.extensions.dash-to-dock.clickAction'>
+<schemalist gettext-domain="xdock">
+  <enum id='org.gnome.shell.extensions.xdock.clickAction'>
     <value value='0' nick='skip'/>
     <value value='1' nick='minimize'/>
     <value value='2' nick='launch'/>
@@ -14,31 +14,35 @@
     <value value='10' nick='focus-minimize-or-appspread'/>
     <value value='11' nick='quit'/>
   </enum>
-  <enum id='org.gnome.shell.extensions.dash-to-dock.scrollAction'>
+  <enum id='org.gnome.shell.extensions.xdock.scrollAction'>
     <value value='0' nick='do-nothing'/>
     <value value='1' nick='cycle-windows'/>
     <value value='2' nick='switch-workspace'/>
   </enum>
+  <enum id='org.gnome.shell.extensions.xdock.showAppsAction'>
+    <value value='0' nick='overview'/>
+    <value value='1' nick='launcher'/>
+  </enum>
   <!-- this is mean to Match StSide. LEFT and RIGHT actual position in reversed in
        rtl languages -->
-  <enum id='org.gnome.shell.extensions.dash-to-dock.position'>
+  <enum id='org.gnome.shell.extensions.xdock.position'>
     <value value='0' nick='TOP'/>
     <value value='1' nick='RIGHT'/>
     <value value='2' nick='BOTTOM'/>
     <value value='3' nick='LEFT'/>
   </enum>
-  <enum id='org.gnome.shell.extensions.dash-to-dock.intellihide-mode'>
+  <enum id='org.gnome.shell.extensions.xdock.intellihide-mode'>
     <value value='0' nick='ALL_WINDOWS'/>
     <value value='1' nick='FOCUS_APPLICATION_WINDOWS'/>
     <value value='2' nick='MAXIMIZED_WINDOWS'/>
     <value value='3' nick='ALWAYS_ON_TOP'/>
   </enum>
-  <enum id='org.gnome.shell.extensions.dash-to-dock.transparency-mode'>
+  <enum id='org.gnome.shell.extensions.xdock.transparency-mode'>
     <value value='0' nick='DEFAULT'/>
     <value value='1' nick='FIXED'/>
     <value value='3' nick='DYNAMIC'/>
   </enum>
-    <enum id='org.gnome.shell.extensions.dash-to-dock.running-indicator-style'>
+    <enum id='org.gnome.shell.extensions.xdock.running-indicator-style'>
     <value value='0' nick='DEFAULT'/>
     <value value='1' nick='DOTS'/>
     <value value='2' nick='SQUARES'/>
@@ -50,8 +54,8 @@
     <value value='8' nick='BINARY'/>
     <value value='9' nick='DOT'/>
   </enum>
-  <schema path="/org/gnome/shell/extensions/dash-to-dock/" id="org.gnome.shell.extensions.dash-to-dock">
-    <key name="dock-position" enum="org.gnome.shell.extensions.dash-to-dock.position">
+  <schema path="/org/gnome/shell/extensions/xdock/" id="org.gnome.shell.extensions.xdock">
+    <key name="dock-position" enum="org.gnome.shell.extensions.xdock.position">
       <default>'BOTTOM'</default>
       <summary>Dock position</summary>
       <description>Dock is shown on the Left, Right, Top or Bottom side of the screen.</description>
@@ -82,16 +86,16 @@
       <description>Sets the color for the dash background.</description>
     </key>
     <key type="s" name="background-color">
-      <default>"#ffffff"</default>
+      <default>"#241f31"</default>
       <summary>Dash background color.</summary>
       <description>Customize the background color of the dash.</description>
     </key>
-    <key name="transparency-mode" enum="org.gnome.shell.extensions.dash-to-dock.transparency-mode">
+    <key name="transparency-mode" enum="org.gnome.shell.extensions.xdock.transparency-mode">
       <default>'DEFAULT'</default>
       <summary>Transparency mode for the dock</summary>
       <description>FIXED: constant transparency. DYNAMIC: dock takes the opaque style only when windows are close to it.</description>
     </key>
-    <key name="running-indicator-style" enum="org.gnome.shell.extensions.dash-to-dock.running-indicator-style">
+    <key name="running-indicator-style" enum="org.gnome.shell.extensions.xdock.running-indicator-style">
       <default>'DEFAULT'</default>
       <summary>...</summary>
       <description>DEFAULT: .... DOTS: ....</description>
@@ -117,7 +121,7 @@
       <description>Sets the opacity of the dash background when windows are close.</description>
     </key>
     <key type="d" name="background-opacity">
-      <default>0.8</default>
+      <default>0.37</default>
       <summary>Opacity of the dash background</summary>
       <description>Sets the opacity of the dash background  when in autohide mode.</description>
     </key>
@@ -131,7 +135,7 @@
       <summary>Dock dodges windows</summary>
       <description>Enable or disable intellihide mode</description>
     </key>
-    <key name="intellihide-mode" enum="org.gnome.shell.extensions.dash-to-dock.intellihide-mode">
+    <key name="intellihide-mode" enum="org.gnome.shell.extensions.xdock.intellihide-mode">
       <default>'FOCUS_APPLICATION_WINDOWS'</default>
       <summary>Define which windows are considered for intellihide.</summary>
       <description></description>
@@ -300,6 +304,11 @@
       <default>true</default>
       <summary>Show application button on the edge when using centered panel mode</summary>
     </key>
+    <key name="show-apps-action" enum="org.gnome.shell.extensions.xdock.showAppsAction">
+      <default>'overview'</default>
+      <summary>Action when the Show Applications button is clicked</summary>
+      <description>'overview' opens the full-screen app grid; 'launcher' opens a small searchable app-grid popup.</description>
+    </key>
     <key type="b" name="bolt-support">
       <default>true</default>
       <summary>Basic compatibility with bolt extensions</summary>
@@ -340,27 +349,27 @@
       <default>true</default>
       <summary>Activate only one window</summary>
     </key>
-    <key name="click-action" enum="org.gnome.shell.extensions.dash-to-dock.clickAction">
+    <key name="click-action" enum="org.gnome.shell.extensions.xdock.clickAction">
       <default>'cycle-windows'</default>
       <summary>Action when clicking on a running app</summary>
       <description>Set the action that is executed when clicking on the icon of a running application</description>
     </key>
-    <key name="scroll-action" enum="org.gnome.shell.extensions.dash-to-dock.scrollAction">
+    <key name="scroll-action" enum="org.gnome.shell.extensions.xdock.scrollAction">
       <default>'do-nothing'</default>
       <summary>Action when scrolling app</summary>
       <description>Set the action that is executed when scrolling on the application icon</description>
     </key>
-    <key name="shift-click-action" enum="org.gnome.shell.extensions.dash-to-dock.clickAction">
+    <key name="shift-click-action" enum="org.gnome.shell.extensions.xdock.clickAction">
       <default>'minimize'</default>
       <summary>Action when shift+clicking on a running app</summary>
       <description>Set the action that is executed when shift+clicking on the icon of a running application</description>
     </key>
-    <key name="middle-click-action" enum="org.gnome.shell.extensions.dash-to-dock.clickAction">
+    <key name="middle-click-action" enum="org.gnome.shell.extensions.xdock.clickAction">
       <default>'launch'</default>
       <summary>Action when clicking on a running app</summary>
       <description>Set the action that is executed when middle-clicking on the icon of a running application</description>
     </key>
-    <key name="shift-middle-click-action" enum="org.gnome.shell.extensions.dash-to-dock.clickAction">
+    <key name="shift-middle-click-action" enum="org.gnome.shell.extensions.xdock.clickAction">
       <default>'launch'</default>
       <summary>Action when clicking on a running app</summary>
       <description>Set the action that is executed when shift+middle-clicking on the icon of a running application</description>

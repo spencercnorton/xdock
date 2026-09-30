@@ -63,8 +63,8 @@ msgstr "Svi prozori"
 #. can also translate the full message if this fits better your language.
 #: appIcons.js:1450
 #, javascript-format
-msgid "Dash to Dock %s"
-msgstr "%s ploče/panela"
+msgid "XDock %s"
+msgstr "XDock %s"
 
 #: Settings.ui.h:1
 msgid "Customize indicator style"

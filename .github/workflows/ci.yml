@@ -1,0 +1,68 @@
+# Check and build on every pull request and on main, on the supported Ubuntu
+# 26.04: ESLint, the Node and GJS tests, the schema and translation checks,
+# ShellCheck, and the zip and .deb built twice, compared byte for byte and
+# checked with Lintian. No secrets, read-only token, GitHub-owned actions
+# pinned by commit.
+name: CI
+on:
+  workflow_call:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    container: ubuntu:26.04@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      DEBIAN_FRONTEND: noninteractive
+      NPM_CONFIG_AUDIT: "false"
+      NPM_CONFIG_FUND: "false"
+    steps:
+      - name: Container prerequisites
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends git ca-certificates python3 nodejs npm make gettext sassc gjs \
+            zip unzip build-essential libglib2.0-bin debhelper dpkg-dev shellcheck lintian
+          # ESLint 9 is the last major version that reads the eslintrc files in lint/.
+          npm install --global eslint@9.32.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Checks
+        run: make verify REQUIRE_GJS=1
+      - name: Shell scripts
+        run: shellcheck scripts/*.sh
+      - name: Build twice and compare
+        run: |
+          git config --system --add safe.directory "$GITHUB_WORKSPACE"
+          SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
+          export SOURCE_DATE_EPOCH
+          scripts/build.sh /tmp/one
+          scripts/build.sh /tmp/two
+          for f in /tmp/one/*; do cmp "$f" "/tmp/two/$(basename "$f")"; done
+          mkdir -p dist/deb dist/zip
+          cp /tmp/one/*.deb dist/deb/
+          cp /tmp/one/*.zip dist/zip/
+          (cd dist/deb && sha256sum *.deb > SHA256SUMS.txt)
+      - name: Lintian
+        run: lintian --fail-on error,warning dist/deb/*.deb
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: gnome-shell-extension-xdock-debian-candidate
+          path: dist/deb/
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: extension-zip
+          path: dist/zip/
+          if-no-files-found: error
+          retention-days: 14

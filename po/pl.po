@@ -1,6 +1,6 @@
-# Polish translation for dash-to-dock GNOME Shell extension
+# Polish translation for xdock GNOME Shell extension
 # Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
-# This file is distributed under the same license as the dash-to-dock package.
+# This file is distributed under the same license as the xdock package.
 #
 #
 # Piotr Sokół <psokol.l10n@gmail.com>, 2012, 2013, 2015, 2016, 2017.
@@ -69,8 +69,8 @@ msgstr "Wszystkie okna"
 #. can also translate the full message if this fits better your language.
 #: appIcons.js:1126
 #, javascript-format
-msgid "Dash to Dock %s"
-msgstr "%s Dash to Dock"
+msgid "XDock %s"
+msgstr "%s XDock"
 
 #: locations.js:65
 msgid "Trash"
