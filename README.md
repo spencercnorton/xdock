@@ -28,6 +28,8 @@ XDock moves GNOME's dash out of the overview and onto the desktop, as a dock for
 
 **Motion that reads as one dock.** Icons lift on hover and press in when clicked, hop when an app starts, and bounce when an app needs your attention. Showing and hiding the dock reverses smoothly from wherever it is, and the animations switch off with GNOME's *Reduce Animation* setting.
 
+**Glass behind the dock.** Where the dock's background is translucent, what is behind it shows through blurred. With [GNOME Rounded Blur](https://github.com/spencercnorton/gnome-rounded-blur) installed the blur follows the dock's rounded corners; without it the blur is a plain rectangle. With GNOME's and Ubuntu's own themes the background is opaque until you choose otherwise: in the preferences, under *Appearance*, set *Customize opacity* to *Fixed* and lower *Opacity*. The blur is on by default, with its own switch on the same page, and its strength and brightness are the `dock-blur-sigma` and `dock-blur-brightness` settings.
+
 **Preferences on libadwaita.** The preferences window uses GNOME's current design, in pages for position and size, launchers, behaviour and appearance.
 
 ## Install
@@ -51,7 +53,7 @@ Turn off Dash to Dock or Ubuntu Dock first if you use one: two docks on the same
 
 ### Ubuntu 26.04 — the release package
 
-The same release carries `gnome-shell-extension-xdock_*_all.deb`, which installs the extension for every user and its settings schema and translations system-wide: `sudo apt install ./gnome-shell-extension-xdock_*_all.deb`. Then log out and in, and enable it as above.
+The same release carries `gnome-shell-extension-xdock_*_all.deb`, which installs the extension for every user and its settings schema and translations system-wide: `sudo apt install ./gnome-shell-extension-xdock_*_all.deb`. Then log out and in, and enable it as above. The package recommends `gnome-rounded-blur`, from the [GNOME Rounded Blur releases](https://github.com/spencercnorton/gnome-rounded-blur/releases/latest), for the rounded corners of the dock blur.
 
 The extension is not on extensions.gnome.org.
 

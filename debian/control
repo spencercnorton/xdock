@@ -13,12 +13,15 @@ Depends:
  ${misc:Depends},
  gnome-shell (>= 50~),
  gnome-shell (<< 51~)
+Recommends: gnome-rounded-blur
 Description: GNOME Shell extension: the NorviOS dock and app launcher
  A dock for GNOME Shell, based on Dash to Dock: pinned and running apps at
  the edge of the screen, window previews, intelligent autohide and
  notification badges. The Applications button can open a compact launcher
  with search, the most-used apps, drawers kept as GNOME app folders, and
- buttons for Settings, locking and the power menu.
+ buttons for Settings, locking and the power menu. Where the dock's
+ background is translucent, what is behind it is blurred; gnome-rounded-blur
+ rounds the blur to the dock's corners.
  .
  After installing, log out and back in once, then enable it with
  `gnome-extensions enable xdock@spencercnorton.github.io`.

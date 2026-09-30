@@ -46,6 +46,7 @@ import {
 } from './imports.js';
 
 import {Extension} from './dependencies/shell/extensions/extension.js';
+import {DockBlur} from './dockBlur.js';
 import {
     DeferredTask,
     LifecycleState,
@@ -292,6 +293,7 @@ const XDock = GObject.registerClass({
         this._signalsHandler = null;
         this._intellihide = null;
         this._themeManager = null;
+        this._blur = null;
         this._workspaceSwitcherPopup = null;
         this.dash = null;
         this._slider = null;
@@ -487,6 +489,7 @@ const XDock = GObject.registerClass({
         this._themeManager = new Theming.ThemeManager(this);
         this._signalsHandler.add(this._themeManager, 'updated',
             () => this.dash.resetAppIcons());
+        this._blur = new DockBlur(this.dash, settings);
 
         this._signalsHandler.add(DockManager.iconTheme, 'changed',
             () => this.dash.resetAppIcons());
@@ -631,6 +634,8 @@ const XDock = GObject.registerClass({
             // from an already-disposed actor; doing so emitted critical
             // warnings from the Shell shutdown path during logout.
             ['dock signals', () => this._signalsHandler?.destroy()],
+            // The blur is attached to the dash and must go before it.
+            ['dock blur', () => this._blur?.destroy()],
             // These objects own global signals internally. Keep each teardown
             // independent because any one of them may be only partly built.
             ['dash', () => this.dash?.destroy()],

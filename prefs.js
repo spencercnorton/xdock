@@ -904,6 +904,11 @@ export default class DockPreferences extends ExtensionPreferences {
             key: 'force-straight-corner',
         });
         this._switchRow(dashGroup, {
+            title: __('Blur behind the dock'),
+            subtitle: __('Shows where the dock background is not fully opaque.'),
+            key: 'dock-blur',
+        });
+        this._switchRow(dashGroup, {
             title: __('Show overview on startup'),
             key: 'disable-overview-on-startup',
             flags: Gio.SettingsBindFlags.INVERT_BOOLEAN,

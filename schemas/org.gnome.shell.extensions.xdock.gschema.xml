@@ -125,6 +125,23 @@
       <summary>Opacity of the dash background</summary>
       <description>Sets the opacity of the dash background  when in autohide mode.</description>
     </key>
+    <key type="b" name="dock-blur">
+      <default>true</default>
+      <summary>Blur behind the dock</summary>
+      <description>Blurs what is behind the dock. It shows only where the dock background is not fully opaque.</description>
+    </key>
+    <key type="i" name="dock-blur-sigma">
+      <range min="0" max="100"/>
+      <default>30</default>
+      <summary>Strength of the blur behind the dock</summary>
+      <description>The blur radius, in pixels at a scale of 1.</description>
+    </key>
+    <key type="d" name="dock-blur-brightness">
+      <range min="0" max="1"/>
+      <default>0.6</default>
+      <summary>Brightness of the blur behind the dock</summary>
+      <description>1 keeps the blurred backdrop as bright as it is; lower values darken it.</description>
+    </key>
     <key type="b" name="manualhide">
       <default>false</default>
       <summary>Dock not shown on desktop</summary>
