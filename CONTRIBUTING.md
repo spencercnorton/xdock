@@ -16,14 +16,16 @@ personal address private. Public history is public data.
 
 ```bash
 make verify REQUIRE_GJS=1           # what CI runs: ESLint, Node and GJS tests, schemas, translations
+make _build && tests/shell/idle-frames.sh _build
+                                    # also in CI: a still screen paints nothing, in a headless GNOME Shell 50
 make install                        # install the checkout into your own extensions directory
 scripts/build.sh                    # build the release zip and .deb
 ```
 
 - Test a change in a real GNOME Shell session, and say which version in the
-  pull request. The tests check the dock's bookkeeping, not what appears on
-  screen. Every GNOME Shell major version is checked before it is added to
-  `metadata.json`.
+  pull request. The tests check the dock's bookkeeping, and the headless run
+  that a still screen paints nothing, not what appears on screen. Every GNOME
+  Shell major version is checked before it is added to `metadata.json`.
 - Keep a change to one concern.
 - A fix that belongs in Dash to Dock is best sent there first, at
   [micheleg/dash-to-dock](https://github.com/micheleg/dash-to-dock); XDock

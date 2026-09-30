@@ -1,8 +1,9 @@
 # Check and build on every pull request and on main, on the supported Ubuntu
 # 26.04: ESLint, the Node and GJS tests, the schema and translation checks,
 # ShellCheck, and the zip and .deb built twice, compared byte for byte and
-# checked with Lintian. No secrets, read-only token, GitHub-owned actions
-# pinned by commit.
+# checked with Lintian; and, in a headless GNOME Shell 50, that a still screen
+# paints nothing. No secrets, read-only token, GitHub-owned actions pinned by
+# commit.
 name: CI
 on:
   workflow_call:
@@ -39,7 +40,7 @@ jobs:
       - name: Checks
         run: make verify REQUIRE_GJS=1
       - name: Shell scripts
-        run: shellcheck scripts/*.sh
+        run: shellcheck scripts/*.sh tests/shell/*.sh
       - name: Build twice and compare
         run: |
           git config --system --add safe.directory "$GITHUB_WORKSPACE"
@@ -66,3 +67,31 @@ jobs:
           path: dist/zip/
           if-no-files-found: error
           retention-days: 14
+  still-screen:
+    container: ubuntu:26.04@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      DEBIAN_FRONTEND: noninteractive
+    steps:
+      - name: Container prerequisites
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends ca-certificates make gettext sassc unzip libglib2.0-bin \
+            gnome-shell gnome-shell-common dbus dbus-bin dbus-daemon libgl1-mesa-dri libegl-mesa0 \
+            gsettings-desktop-schemas xwayland at-spi2-core
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: A still screen paints nothing
+        run: |
+          make _build
+          # A container has no logind. Without /run/systemd/seats GNOME Shell
+          # uses its own stand-in, but it still wants a system bus.
+          rm -rf /run/systemd/seats
+          mkdir -p /run/dbus
+          dbus-daemon --system --fork
+          useradd --create-home tester
+          runuser -u tester -- tests/shell/idle-frames.sh _build

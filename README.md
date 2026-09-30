@@ -26,7 +26,7 @@ XDock moves GNOME's dash out of the overview and onto the desktop, as a dock for
 
 **System actions at hand.** The launcher shows who is logged in, and has buttons for Settings, for locking the screen, and for a power menu with log out, restart and power off, each following what GNOME allows.
 
-**Motion that reads as one dock.** Icons lift on hover and press in when clicked, hop when an app starts, and bounce when an app needs your attention. Showing and hiding the dock reverses smoothly from wherever it is, and the animations switch off with GNOME's *Reduce Animation* setting.
+**Motion that reads as one dock.** Icons lift on hover and press in when clicked, hop when an app starts, and bounce every few seconds while an app needs your attention. Showing and hiding the dock reverses smoothly from wherever it is. The animations switch off with GNOME's *Reduce Animation* setting, and GNOME turns them off itself when it draws the screen in software, as in most virtual machines; icons then stay still, and an app that needs attention does not bounce.
 
 **Glass behind the dock.** Where the dock's background is translucent, what is behind it shows through blurred, rounded to the dock's corners. The blur needs [GNOME Rounded Blur](https://github.com/spencercnorton/gnome-rounded-blur); without it the dock stays translucent, with no blur. With GNOME's and Ubuntu's own themes the background is opaque until you choose otherwise: in the preferences, under *Appearance*, set *Customize opacity* to *Fixed* and lower *Opacity*. The blur is on by default, with its own switch on the same page, and its strength and brightness are the `dock-blur-sigma` and `dock-blur-brightness` settings.
 
@@ -83,6 +83,8 @@ XDock opens no network connections. The launcher ranks apps by GNOME's own usage
 
 ```bash
 make verify REQUIRE_GJS=1           # ESLint, the Node and GJS tests, schemas and translations
+make _build && tests/shell/idle-frames.sh _build
+                                    # a headless GNOME Shell 50: a still screen paints nothing
 make install                        # build and install into ~/.local/share/gnome-shell/extensions
 scripts/build.sh                    # the release zip and .deb, into dist/
 ```

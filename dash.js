@@ -28,6 +28,8 @@ import {
     Utils,
 } from './imports.js';
 
+import {IconAnimator} from './iconAnimator.js';
+
 // module "Dash" did not export DASH_ANIMATION_TIME in old versions
 // so we just define it like it is defined in Dash;
 // taken from https://gitlab.gnome.org/GNOME/gnome-shell/-/blob/main/js/ui/dash.js
@@ -261,7 +263,7 @@ export const DockDash = GObject.registerClass({
 
         this._appSystem = Shell.AppSystem.get_default();
 
-        this.iconAnimator = new Docking.IconAnimator(this);
+        this.iconAnimator = new IconAnimator(this);
 
         this._signalsHandler.add([
             this._appSystem,
