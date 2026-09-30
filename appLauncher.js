@@ -1369,6 +1369,10 @@ export class AppGridLauncher {
 
         this._hoverLabel.set_text(icon._app.get_name());
         this._hoverLabel.show();
+        // Opening a popup menu raises it to the top of uiGroup, so the label,
+        // added after the launcher's popup, still ends up underneath it --
+        // and the popup is exactly what it has to float over.
+        Main.uiGroup.set_child_above_sibling(this._hoverLabel, null);
 
         const [iconX, iconY] = icon.get_transformed_position();
         const [iconWidth] = icon.get_transformed_size();
