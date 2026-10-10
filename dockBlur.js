@@ -41,7 +41,7 @@ function covers(clip, actor) {
 }
 
 /**
- * Keeps every redraw of the dock whole.
+ * Keeps every redraw of a blurred surface whole.
  *
  * A background blur copies the screen under it, and where a redraw covers only
  * part of the dock, the rest of that copy is the dock itself from the frame
@@ -51,8 +51,8 @@ function covers(clip, actor) {
  * dock in the same frame. A partial redraw from behind the dock, which no
  * clone hears of, is followed by one whole redraw.
  */
-const WholeDockRedraw = GObject.registerClass(
-class XDockWholeDockRedraw extends Clutter.Clone {
+export const WholeSurfaceRedraw = GObject.registerClass(
+class XDockWholeSurfaceRedraw extends Clutter.Clone {
     vfunc_get_preferred_width(_forHeight) {
         return [0, 0];
     }
@@ -70,6 +70,10 @@ class XDockWholeDockRedraw extends Clutter.Clone {
     vfunc_get_paint_volume(volume) {
         return volume.set_from_allocation(this);
     }
+
+    // This clone paints nothing and must not intercept even PickMode.ALL,
+    // which Shell's drag-and-drop uses for non-reactive actors too.
+    vfunc_pick(_pickContext) {}
 
     vfunc_paint(paintContext) {
         const clip = paintContext.get_redraw_clip();
@@ -122,7 +126,7 @@ export class DockBlur {
             return;
         const {_background: background, _dashContainer: icons} = this._dash;
         const effect = new Blur.BlurEffect({mode: Blur.BlurMode.BACKGROUND});
-        this._redraw = new WholeDockRedraw({source: icons});
+        this._redraw = new WholeSurfaceRedraw({source: icons});
         this._redirects = [this._dash.offscreen_redirect, icons.offscreen_redirect];
         this._dash.offscreen_redirect = Clutter.OffscreenRedirect.AUTOMATIC_FOR_OPACITY;
         icons.offscreen_redirect = Clutter.OffscreenRedirect.ALWAYS;

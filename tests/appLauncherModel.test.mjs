@@ -463,7 +463,7 @@ assert.match(monitorBlock, /DragMotionResult\.CONTINUE/);
 // handler on the picked target, so the close is deferred to an idle callback.
 const dragMotionBlock = launcherSource.slice(
     launcherSource.indexOf('_onDragMotion(event)'),
-    launcherSource.indexOf('onDragEnd(_icon)'));
+    launcherSource.indexOf('onDragEnd(icon)'));
 assert.match(dragMotionBlock, /_queueIdle\('drag close'/);
 // The close must sit INSIDE the idle callback, not before it.
 assert.ok(dragMotionBlock.indexOf("_queueIdle('drag close'") <

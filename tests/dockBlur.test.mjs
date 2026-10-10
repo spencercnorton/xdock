@@ -280,3 +280,13 @@ test('a partial redraw is followed by exactly one whole redraw, and nothing more
     assert.equal(clone.redraws, 2, 'a later partial redraw is not followed up');
     blur.destroy();
 });
+
+test('the shared redraw helper takes no layout space and never picks drag targets', () => {
+    const helper = new missing.WholeSurfaceRedraw({source: {}});
+    helper.parent = {get_allocation_box: () => ({get_size: () => [800, 600]})};
+    assert.deepEqual(helper.vfunc_get_preferred_width(-1), [0, 0]);
+    assert.deepEqual(helper.vfunc_get_preferred_height(-1), [0, 0]);
+    helper.vfunc_allocate({});
+    assert.deepEqual(helper.allocation, {x1: 0, y1: 0, x2: 800, y2: 600});
+    helper.vfunc_pick({push_rectangle() { assert.fail('invisible helper intercepted a drop'); }});
+});

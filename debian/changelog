@@ -1,3 +1,9 @@
+gnome-shell-extension-xdock (2.0.1~popup1) resolute; urgency=medium
+
+  * Fix launcher blur redraws, hover labels and drag-and-drop pinning.
+
+ -- Norvi <apt@globalentry.systems>  Sat, 10 Oct 2026 13:25:00 +0000
+
 gnome-shell-extension-xdock (2.0.0) resolute; urgency=medium
 
   * First public release. The UUID is now xdock@spencercnorton.github.io;

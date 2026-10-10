@@ -23,6 +23,7 @@ import {
 
 import {
     AppIcons,
+    AppLauncher,
     Docking,
     Theming,
     Utils,
@@ -452,8 +453,20 @@ export const DockDash = GObject.registerClass({
         return ret;
     }
 
-    acceptDrop(...args) {
-        return Dash.Dash.prototype.acceptDrop?.call(this, ...args);
+    acceptDrop(source, actor, x, y, time) {
+        // A fast release can arrive before Shell's queued drag-hover has run
+        // after the launcher closes. Native acceptDrop reports success without
+        // pinning when there is no placeholder, so establish it at the actual
+        // drop coordinates first, through the ordinary native policy gates.
+        const fromLauncher = source instanceof AppLauncher.LauncherAppIcon;
+        if (fromLauncher)
+            this.handleDragOver(source, actor, x, y, time);
+        const accepted = Dash.Dash.prototype.acceptDrop?.call(this, source, actor, x, y, time);
+        // A release can also beat the launcher's queued close. The source tree
+        // remains alive until Shell finishes the drag, just as on handoff.
+        if (accepted && fromLauncher)
+            source._launcher?.close({animate: false});
+        return accepted;
     }
 
     _onWindowDragBegin(...args) {
