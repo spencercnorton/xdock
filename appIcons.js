@@ -467,10 +467,12 @@ export const DockAbstractAppIcon = GObject.registerClass({
             if (floating)
                 this._stackFloat();
             layer.visible = floating;
-            iconBin.opacity = floating ? 0 : 255;
-            // The tile background stays in the dock with the bin; left there
-            // it reads as an empty slot under the floating icon.
-            this.icon.set_style(floating ? 'background-color: transparent;' : null);
+            // Hides the bin and its tile background together; the background
+            // left in the dock would read as an empty slot under the floating
+            // icon. Opacity rather than a style change: a new style starts a
+            // theme transition that keeps repainting after the bounce ends.
+            // The clone paints the bin at its own opacity, so it is unaffected.
+            this.icon.opacity = floating ? 0 : 255;
         }
         this.get_parent()?.syncLabelPosition?.();
         if (!floating)
