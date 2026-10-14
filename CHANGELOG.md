@@ -2,6 +2,13 @@
 
 All notable changes to XDock are documented here.
 
+## 2.0.1~popup1 — 2026-10-10
+
+- Keep launcher blur redraws covering the whole popup when hovering or scrolling, with no continuous redraw while idle.
+- Keep invisible redraw helpers out of pointer picking so they cannot intercept dock drops.
+- Make launcher-to-dock drag handoff cancel safely and pin applications even when released before the next hover frame.
+- Hide floating application names when scrolling or closing the popup, and position each name using its current text size.
+
 ## 2.0.0 — 2026-09-30
 
 The first public release, on Dash to Dock at `248d42b`.

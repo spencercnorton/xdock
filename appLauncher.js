@@ -46,6 +46,7 @@ import {
 } from './appLauncherModel.js';
 
 import {DeferredTask} from './lifecycle.js';
+import {WholeSurfaceRedraw} from './dockBlur.js';
 
 import * as PopupMenuUtils from './popupMenuUtils.js';
 
@@ -111,7 +112,7 @@ function launcherAnimationDuration(duration) {
  * gestures, the keyboard popup-menu signal, and its own PopupMenuManager. Only
  * the menu implementation and the post-activation behaviour are overridden.
  */
-const LauncherAppIcon = GObject.registerClass(
+export const LauncherAppIcon = GObject.registerClass(
 class LauncherAppIcon extends AppDisplay.AppIcon {
     _init(app, launcher) {
         super._init(app, {
@@ -296,6 +297,7 @@ export class AppGridLauncher {
         this._touchPanGesture = null;
         this._statusLabel = null;
         this._hoverLabel = null;
+        this._hoverLabelIcon = null;
         this._header = null;
         this._footer = null;
         this._sidebar = null;
@@ -316,6 +318,7 @@ export class AppGridLauncher {
         this._deferredDrawerRender = false;
         this._dragMonitor = null;
         this._closingForDrag = false;
+        this._dragCloseId = 0;
         this._drawers = null;
 
         this._iconMenuOpen = false;
@@ -552,6 +555,7 @@ export class AppGridLauncher {
         if (this._destroyed)
             return;
 
+        this._cancelDragClose();
         this._draggingIcon = icon;
         this._hideHoverLabel({animate: false});
         this._iconMenuOpen = false;
@@ -631,6 +635,11 @@ export class AppGridLauncher {
         if (inside)
             return;
 
+        // Drawer reordering stays inside the launcher; only an application
+        // drag can hand off to the dock.
+        if (!this._draggingIcon)
+            return;
+
         // The drag has left for the dock. Release the popup so the drop lands,
         // but not from inside this callback: dnd.js has a destroy handler
         // connected to the picked target for the duration of the monitor loop,
@@ -638,23 +647,42 @@ export class AppGridLauncher {
         this._closingForDrag = true;
         this._removeDragMonitor();
         this._clearDropHighlights();
-        this._queueIdle('drag close', () => {
-            if (!this._destroyed)
-                this.close({animate: false});
+        const icon = this._draggingIcon;
+        const menu = this._menu;
+        this._dragCloseId = this._queueIdle('drag close', () => {
+            this._dragCloseId = 0;
             this._closingForDrag = false;
+            if (this._destroyed || this._draggingIcon !== icon || this._menu !== menu)
+                return;
+
+            this.close({animate: false});
+            // Closing changes the actor under a stationary pointer. Ask
+            // Shell to pick again so the dock's insertion placeholder appears
+            // without requiring another mouse movement.
+            icon._draggable?._queueUpdateDragHover?.();
         });
     }
 
+    _cancelDragClose() {
+        if (this._dragCloseId) {
+            if (this._idleSources.has(this._dragCloseId))
+                GLib.source_remove(this._dragCloseId);
+            this._idleSources.delete(this._dragCloseId);
+            this._dragCloseId = 0;
+        }
+        this._closingForDrag = false;
+    }
+
     /**
-     * @param {LauncherAppIcon} _icon the icon that was dragged
+     * @param {LauncherAppIcon} icon the icon that was dragged
      */
-    onDragEnd(_icon) {
-        if (this._destroyed)
+    onDragEnd(icon) {
+        if (this._destroyed || this._draggingIcon !== icon)
             return;
 
+        this._cancelDragClose();
         this._removeDragMonitor();
         this._draggingIcon = null;
-        this._closingForDrag = false;
         this._clearDropHighlights();
         this._flushDeferredDrawers();
         this._flushDeferredCatalog();
@@ -1367,6 +1395,7 @@ export class AppGridLauncher {
         if (this._iconMenuOpen || this._draggingIcon)
             return;
 
+        this._hoverLabelIcon = icon;
         this._hoverLabel.set_text(icon._app.get_name());
         this._hoverLabel.show();
         // Opening a popup menu raises it to the top of uiGroup, so the label,
@@ -1376,8 +1405,9 @@ export class AppGridLauncher {
 
         const [iconX, iconY] = icon.get_transformed_position();
         const [iconWidth] = icon.get_transformed_size();
-        const labelWidth = this._hoverLabel.get_width();
-        const labelHeight = this._hoverLabel.get_height();
+        // Allocation can still hold the previous app's caption here. Measure
+        // the new text so crossing between short and long names stays centred.
+        const [, , labelWidth, labelHeight] = this._hoverLabel.get_preferred_size();
 
         let x = Math.round(iconX + (iconWidth - labelWidth) / 2);
         const y = Math.round(iconY - labelHeight - HOVER_LABEL_GAP);
@@ -1399,7 +1429,10 @@ export class AppGridLauncher {
         });
     }
 
-    _hideHoverLabel({animate = true} = {}) {
+    _hideHoverLabel({animate = true, source = null} = {}) {
+        if (source && source !== this._hoverLabelIcon)
+            return;
+        this._hoverLabelIcon = null;
         if (!this._hoverLabel)
             return;
 
@@ -1574,6 +1607,11 @@ export class AppGridLauncher {
                 y_expand: true,
                 child: grid,
             });
+            // A floating label is outside the viewport. Hide it as soon as
+            // scrolling moves its source, including wheel, keyboard and touch
+            // adjustment changes; the next hover/focus displays a fresh label.
+            this._menuSignalsHandler.add(scrollView.vadjustment, 'notify::value',
+                () => this._hideHoverLabel({animate: false}));
 
             let touchPanGesture = null;
             if (scrollView.set_touch_scrolling instanceof Function) {
@@ -1736,6 +1774,13 @@ export class AppGridLauncher {
             menuItem.add_child(root);
             menu.addMenuItem(menuItem);
 
+            // Popup blur is a sibling behind the menu in uiGroup. Expanding
+            // content damage to the whole menu keeps it from sampling pixels
+            // left over from the previous blurred frame on hover or scroll.
+            // The zero-size clone observes only content, never itself or the
+            // blur actor, and is destroyed with the menu.
+            menu.box.add_child(new WholeSurfaceRedraw({source: root}));
+
             menuManager = new PopupMenu.PopupMenuManager(sourceButton);
             Utils.addActor(Main.uiGroup, menu.actor);
             menu.actor.hide();
@@ -1809,6 +1854,8 @@ export class AppGridLauncher {
     }
 
     _destroyMenu() {
+        this._cancelDragClose();
+        this._hoverLabelIcon = null;
         this._tryCleanup('pending layout callback', () => this._layoutTask?.cancel());
         const menu = this._menu;
         const menuManager = this._menuManager;
@@ -1880,6 +1927,8 @@ export class AppGridLauncher {
         if (isOpen)
             return;
 
+        this._hideHoverLabel({animate: false});
+        this._cancelDragClose();
         if (this._restoreFocusOnClose && this._sourceButton?.mapped)
             this._sourceButton.grab_key_focus();
         this._restoreFocusOnClose = false;
@@ -2697,6 +2746,10 @@ export class AppGridLauncher {
             // Keyboard users get the name too, not just pointer users.
             this._showHoverLabel(button);
         });
+        button.connect('key-focus-out', () => {
+            if (!button.hover)
+                this._hideHoverLabel({source: button});
+        });
         button.connect('notify::hover', () => {
             const index = this._visibleButtons.indexOf(button);
             if (button.hover && index >= 0) {
@@ -2704,7 +2757,7 @@ export class AppGridLauncher {
                 this._updateSelection();
                 this._showHoverLabel(button);
             } else if (!button.hover && !button.has_key_focus()) {
-                this._hideHoverLabel();
+                this._hideHoverLabel({source: button});
             }
         });
 
