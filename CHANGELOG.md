@@ -2,6 +2,13 @@
 
 All notable changes to XDock are documented here.
 
+## 2.1.0~mag1 — 2026-10-14
+
+- Magnify the icons under the pointer, macOS-style: the icon under the pointer grows to twice its size, its neighbours less, and the row widens around the pointer. Off by default; switch it on in the preferences, where the size, reach and response time can also be set.
+- Magnified icons, the launch bounce and the attention bounce are painted above the dock, so they rise past its edge instead of being cut off by it.
+- The launch bounce is now two hops sized to the icon, and the attention bounce is higher. The running dots stay in the dock.
+- An application name rides above its magnified icon and hides when the app is launched.
+
 ## 2.0.1~popup1 — 2026-10-10
 
 - Keep launcher blur redraws covering the whole popup when hovering or scrolling, with no continuous redraw while idle.

@@ -14,6 +14,7 @@ import {
     Dash,
     DND,
     Main,
+    PointerWatcher,
 } from './dependencies/shell/ui.js';
 
 import {
@@ -25,6 +26,7 @@ import {
     AppIcons,
     AppLauncher,
     Docking,
+    Motion,
     Theming,
     Utils,
 } from './imports.js';
@@ -63,10 +65,47 @@ class DockDashItemContainer extends Dash.DashItemContainer {
         this.label?.add_style_class_name(Theming.PositionStyleClass[position]);
         if (Docking.DockManager.settings.customThemeShrink)
             this.label?.add_style_class_name('shrink');
+        this._magnifyScale = 1;
+        this._magnifyHorizontal = position === St.Side.TOP || position === St.Side.BOTTOM;
+    }
+
+    // Magnification reserves its room through allocation, never through a
+    // transform on this reactive container: a scaled reactive actor picks
+    // somewhere other than where layout put it (measured; see appIcons.js),
+    // while a wider allocation is simply where the icon is. The visible
+    // growth is painted by the child's clone in the ui group.
+    setMagnifyScale(scale) {
+        const quantized = Math.round(scale * 1000) / 1000;
+        if (quantized === this._magnifyScale)
+            return;
+        this._magnifyScale = quantized;
+        this.queue_relayout();
+        this.child?.setMagnifyScale?.(quantized);
+    }
+
+    vfunc_get_preferred_width(forHeight) {
+        const [min, nat] = super.vfunc_get_preferred_width(forHeight);
+        return this._magnifyHorizontal && this._magnifyScale !== 1
+            ? [min * this._magnifyScale, nat * this._magnifyScale] : [min, nat];
+    }
+
+    vfunc_get_preferred_height(forWidth) {
+        const [min, nat] = super.vfunc_get_preferred_height(forWidth);
+        return !this._magnifyHorizontal && this._magnifyScale !== 1
+            ? [min * this._magnifyScale, nat * this._magnifyScale] : [min, nat];
     }
 
     showLabel() {
         return AppIcons.itemShowLabel.call(this);
+    }
+
+    // Keeps a showing label on the magnified icon as it grows, shrinks and
+    // is pushed along by its neighbours.
+    syncLabelPosition() {
+        if (!this.label?.visible || !this._labelText || !this.label.get_stage())
+            return;
+        const [x, y] = AppIcons.itemPlaceLabel.call(this);
+        this.label.set_position(x, y);
     }
 
     // we override the method show taken from:
@@ -172,6 +211,14 @@ export const DockDash = GObject.registerClass({
         this._dragPlaceholder = null;
         this._dragPlaceholderPos = -1;
         this._animatingPlaceholdersCount = 0;
+        this._magnifyWatch = null;
+        this._magnifyPointer = null;
+        this._magnifyInfluence = 0;
+        this._magnifyFreezes = new Set();
+        this._magnifyRest = null;
+        this._magnifyLastTickMs = 0;
+        this._magnifyAnimId = 0;
+        this._magnifyStagePointer = null;
         this._showLabelTimeoutId = 0;
         this._resetHoverTimeoutId = 0;
         this._labelShowing = false;
@@ -308,6 +355,20 @@ export const DockDash = GObject.registerClass({
         ]);
 
         this.connect('destroy', this._onDestroy.bind(this));
+
+        this._signalsHandler.add(Docking.DockManager.settings, 'changed::magnify-icons',
+            () => this._syncMagnify());
+        this._signalsHandler.add(Docking.DockManager.settings, 'changed::icon-size-fixed',
+            () => this._syncMagnify());
+        this.connect('menu-opened', () => {
+            this._magnifyFreezes.add('menu');
+            this._resetMagnify();
+        });
+        this.connect('menu-closed', () => this._magnifyFreezes.delete('menu'));
+        this._magnifyRestStale = false;
+        const staleRest = () => (this._magnifyRestStale = true);
+        this._box.connectObject('child-added', staleRest, 'child-removed', staleRest, this);
+        this._syncMagnify();
     }
 
     vfunc_get_preferred_height(forWidth) {
@@ -331,6 +392,9 @@ export const DockDash = GObject.registerClass({
     }
 
     _onDestroy() {
+        this._magnifyWatch?.remove();
+        this._magnifyWatch = null;
+        this._stopMagnifyAnim();
         this.iconAnimator.destroy();
 
         if (this._requiresVisibilityTimeout) {
@@ -346,14 +410,20 @@ export const DockDash = GObject.registerClass({
 
 
     _onItemDragBegin(...args) {
+        // Shell's placeholder maths assumes uniform item widths, so
+        // magnification must be back at rest before the first drag motion.
+        this._magnifyFreezes.add('drag');
+        this._resetMagnify();
         return Dash.Dash.prototype._onItemDragBegin?.call(this, ...args);
     }
 
     _onItemDragCancelled(...args) {
+        this._magnifyFreezes.delete('drag');
         return Dash.Dash.prototype._onItemDragCancelled?.call(this, ...args);
     }
 
     _onItemDragEnd(...args) {
+        this._magnifyFreezes.delete('drag');
         return Dash.Dash.prototype._onItemDragEnd?.call(this, ...args);
     }
 
@@ -467,6 +537,168 @@ export const DockDash = GObject.registerClass({
         if (accepted && fromLauncher)
             source._launcher?.close({animate: false});
         return accepted;
+    }
+
+    // Magnification runs off a PointerWatcher rather than motion events:
+    // the watcher is the one pointer source that keeps reporting while the
+    // pointer crosses reactive children, gaps and the part of a magnified
+    // icon that overflows the dock, without making anything newly reactive.
+    // It exists only while the feature is on, and a tick that finds the
+    // dock settled returns without touching layout, so an idle dock with
+    // magnification enabled still stops redrawing entirely.
+    // The show-apps button lives outside _box and does not magnify.
+    _syncMagnify() {
+        const {settings} = Docking.DockManager;
+        // A scrolling dock (fixed icon size) would fight its own scrollbar:
+        // growing an item moves the content under the pointer.
+        const enabled = settings.magnifyIcons && !settings.iconSizeFixed;
+        if (enabled && !this._magnifyWatch) {
+            this._magnifyWatch = PointerWatcher.getPointerWatcher().addWatch(
+                16, (x, y) => this._magnifyOnPointer(x, y));
+        } else if (!enabled && this._magnifyWatch) {
+            this._magnifyWatch.remove();
+            this._magnifyWatch = null;
+            this._stopMagnifyAnim();
+            this._resetMagnify();
+        }
+    }
+
+    _resetMagnify() {
+        this._magnifyInfluence = 0;
+        this._magnifyPointer = null;
+        for (const child of this._box.get_children())
+            child.setMagnifyScale?.(1);
+    }
+
+    // PointerWatcher only calls back when the pointer moves, so it cannot
+    // drive the approach on its own: a pointer that stops mid-swell would
+    // freeze there. The watcher only records the target; a short-lived
+    // timer runs the easing until settled, then removes itself.
+    _magnifyOnPointer(x, y) {
+        this._magnifyStagePointer = [x, y];
+        if (this._magnifyInfluence === 0 && !this._magnifyAnimId)
+            this._magnifyRest = this._captureMagnifyRest();
+        this._startMagnifyAnim();
+    }
+
+    _startMagnifyAnim() {
+        if (this._magnifyAnimId)
+            return;
+        this._magnifyLastTickMs = 0;
+        this._magnifyAnimId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 16, () => {
+            if (this._magnifyStep())
+                return GLib.SOURCE_CONTINUE;
+            this._magnifyAnimId = 0;
+            return GLib.SOURCE_REMOVE;
+        });
+        GLib.Source.set_name_by_id(this._magnifyAnimId, '[xdock] magnify step');
+    }
+
+    _stopMagnifyAnim() {
+        if (this._magnifyAnimId)
+            GLib.source_remove(this._magnifyAnimId);
+        this._magnifyAnimId = 0;
+    }
+
+    // Returns whether another step is needed.
+    _magnifyStep() {
+        const nowMs = GLib.get_monotonic_time() / 1000;
+        const dtMs = Math.min(this._magnifyLastTickMs ? nowMs - this._magnifyLastTickMs : 16, 100);
+        this._magnifyLastTickMs = nowMs;
+        const {settings} = Docking.DockManager;
+        const duration = St.Settings.get().enable_animations ? settings.magnifyDuration : 0;
+
+        // At rest, keep re-reading the resting geometry: children, icon size
+        // and dock position can all change underneath us, and a snapshot
+        // taken now is exactly the geometry magnification must grow from.
+        // An item added or removed mid-magnification (favourites edited, an
+        // app starting) invalidates the snapshot: it would keep scaling
+        // destroyed items.
+        if (this._magnifyInfluence === 0 || this._magnifyRestStale) {
+            this._magnifyRest = this._captureMagnifyRest();
+            this._magnifyRestStale = false;
+        }
+        const rest = this._magnifyRest;
+        const [x, y] = this._magnifyStagePointer ?? [NaN, NaN];
+        if (!rest)
+            return false;
+
+        const axis = this._isHorizontal ? x : y;
+        const across = this._isHorizontal ? y : x;
+        const inside = this.mapped && !this._magnifyFreezes.size &&
+            axis >= rest.axisStart - rest.pitch / 2 &&
+            axis <= rest.axisStart + rest.total + rest.pitch / 2 &&
+            across >= rest.acrossStart - rest.acrossOverflow &&
+            across <= rest.acrossStart + rest.acrossSize + rest.acrossOverflow;
+
+        this._magnifyInfluence = Motion.planMagnifyApproach(
+            this._magnifyInfluence, inside ? 1 : 0, duration, dtMs);
+        if (inside) {
+            const target = axis - rest.axisStart;
+            this._magnifyPointer = this._magnifyPointer === null
+                ? target
+                : Motion.planMagnifyApproach(this._magnifyPointer, target, duration, dtMs);
+        }
+        if (this._magnifyInfluence === 0) {
+            // Settled: put every scale back (a no-op once at rest) and stop.
+            this._resetMagnify();
+            return false;
+        }
+
+        const scales = Motion.planMagnification({
+            centers: rest.centers,
+            itemSize: rest.pitch,
+            pointer: this._magnifyPointer,
+            influence: this._magnifyInfluence,
+            maxScale: settings.magnifyMaxScale,
+            rangeFactor: settings.magnifyRangeFactor,
+            maxTotal: rest.maxTotal,
+            restTotal: rest.total,
+        });
+        rest.items.forEach((item, i) => item.setMagnifyScale(scales[i]));
+        return this._magnifyInfluence !== (inside ? 1 : 0) ||
+            (inside && this._magnifyPointer !== axis - rest.axisStart);
+    }
+
+    _captureMagnifyRest() {
+        const items = this._box.get_children().filter(c => c.setMagnifyScale && c.visible);
+        if (!items.length || !this._box.get_stage())
+            return null;
+
+        const [stageX, stageY] = this._box.get_transformed_position();
+        const centers = items.map(item => {
+            const box = item.get_allocation_box();
+            return this._isHorizontal
+                ? (box.x1 + box.x2) / 2 : (box.y1 + box.y2) / 2;
+        });
+        const axisSize = item => {
+            const box = item.get_allocation_box();
+            return this._isHorizontal ? box.get_width() : box.get_height();
+        };
+        const pitch = centers.length > 1
+            ? (centers.at(-1) - centers[0]) / (centers.length - 1)
+            : axisSize(items[0]);
+        if (!(pitch > 0))
+            return null;
+
+        const [boxW, boxH] = this._box.get_transformed_size();
+        const axisMax = this._isHorizontal ? this._maxWidth : this._maxHeight;
+        const {settings} = Docking.DockManager;
+        const acrossOverflow = pitch * Math.max(0, settings.magnifyMaxScale - 1);
+        return {
+            items,
+            centers,
+            pitch,
+            total: this._isHorizontal ? boxW : boxH,
+            axisStart: this._isHorizontal ? stageX : stageY,
+            acrossStart: this._isHorizontal ? stageY : stageX,
+            acrossSize: this._isHorizontal ? boxH : boxW,
+            // A magnified icon overflows the dock towards the screen
+            // interior; the pointer standing on that overflow is still
+            // "on the dock" or magnification collapses under it.
+            acrossOverflow,
+            maxTotal: axisMax > 0 ? axisMax : Infinity,
+        };
     }
 
     _onWindowDragBegin(...args) {

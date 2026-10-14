@@ -202,6 +202,29 @@
       <summary>Preview size scale</summary>
       <description>Set the allowed maximum dash preview size scale. Allowed range: 0,00..1,00.</description>
     </key>
+    <key type="b" name="magnify-icons">
+      <default>false</default>
+      <summary>Magnify icons under the pointer</summary>
+      <description>Grow the icon under the pointer and its neighbours, macOS-style, pushing the other icons aside. Has no effect while the icon size is fixed and the dock scrolls.</description>
+    </key>
+    <key type="d" name="magnify-max-scale">
+      <range min="1.1" max="2.5"/>
+      <default>2.0</default>
+      <summary>Magnified icon scale</summary>
+      <description>How large the icon under the pointer grows, relative to its resting size. Allowed range: 1.1..2.5.</description>
+    </key>
+    <key type="d" name="magnify-range-factor">
+      <range min="1" max="5"/>
+      <default>3.0</default>
+      <summary>Magnification reach</summary>
+      <description>How far magnification reaches from the pointer, in icon sizes. Allowed range: 1..5.</description>
+    </key>
+    <key type="i" name="magnify-duration">
+      <range min="0" max="500"/>
+      <default>125</default>
+      <summary>Magnification response time</summary>
+      <description>How quickly magnification follows the pointer, in milliseconds. Lower is snappier, higher is smoother. Allowed range: 0..500.</description>
+    </key>
     <key type="b" name="icon-size-fixed">
       <default>false</default>
       <summary>Fixed icon size</summary>

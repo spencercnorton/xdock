@@ -13,6 +13,8 @@ import {
     planAttentionBounce,
     planDockTransition,
     planIconMotion,
+    planMagnification,
+    planMagnifyApproach,
     planIndicatorTransition
 } from '../motion.js';
 
@@ -548,6 +550,80 @@ equal(hiding.completedState, DockMotionState.HIDDEN);
     assert.equal(planAttentionBounce(NaN), 0);
     assertions++;
     assert.equal(planAttentionBounce(-1), 0);
+    assertions++;
+}
+
+{
+    // Seven icons, 80px pitch, pointer resting over the middle one. The
+    // pointer's own icon must reach the peak exactly, or the setting lies.
+    const centers = [40, 120, 200, 280, 360, 440, 520];
+    const base = {
+        centers, itemSize: 80, pointer: 280, maxScale: 1.6, rangeFactor: 2.5,
+    };
+    const scales = planMagnification(base);
+    assert.equal(scales.length, centers.length);
+    assertions++;
+    assert.ok(Math.abs(scales[3] - 1.6) < 1e-9,
+        `icon under the pointer must reach maxScale, got ${scales[3]}`);
+    assertions++;
+
+    // Symmetric, strictly falling with distance, and back to exactly 1
+    // outside the reach: a neighbour left at 1.001 would hold layout open
+    // by a fraction of a pixel forever.
+    assert.ok(scales[2] > 1 && scales[2] < scales[3] && scales[2] === scales[4]);
+    assertions++;
+    assert.ok(scales[1] > 1 && scales[1] < scales[2] && scales[1] === scales[5]);
+    assertions++;
+    assert.equal(scales[0], 1);
+    assertions++;
+    assert.equal(scales[6], 1);
+    assertions++;
+
+    // Influence scales the excess, so halfway in, the peak is halfway.
+    const half = planMagnification({...base, influence: 0.5});
+    assert.ok(Math.abs(half[3] - 1.3) < 1e-9, `half influence peak, got ${half[3]}`);
+    assertions++;
+    assert.deepEqual(planMagnification({...base, influence: 0}), centers.map(() => 1));
+    assertions++;
+
+    // A full dock keeps the shape but lowers the peak to fit its budget.
+    const capped = planMagnification({...base, restTotal: 560, maxTotal: 600});
+    const growth = capped.reduce((sum, s) => sum + (s - 1) * 80, 0);
+    assert.ok(growth <= 40 + 1e-9, `growth must fit the headroom, got ${growth}`);
+    assertions++;
+    assert.ok(capped[3] > 1 && capped[3] < 1.6 && capped[2] === capped[4],
+        'capping must preserve the falloff shape');
+    assertions++;
+    assert.deepEqual(planMagnification({...base, restTotal: 560, maxTotal: 560}),
+        centers.map(() => 1), 'no headroom means no magnification');
+    assertions++;
+
+    // Garbage in, rest out: a NaN pointer mid-frame must never scale an icon.
+    for (const bad of [
+        {pointer: NaN}, {itemSize: 0}, {maxScale: 1}, {maxScale: NaN},
+        {rangeFactor: 0}, {influence: NaN}, {centers: []},
+    ]) {
+        assert.deepEqual(planMagnification({...base, ...bad}),
+            (bad.centers ?? centers).map(() => 1), `bad input ${JSON.stringify(bad)}`);
+        assertions++;
+    }
+}
+
+{
+    // Approaches monotonically, most of the way within one duration, and
+    // then snaps: an asymptote here would keep the dock relayouting forever.
+    let value = 0;
+    for (let i = 0; i < 8; i++)
+        value = planMagnifyApproach(value, 100, 125, 16);
+    assert.ok(value > 90 && value <= 100, `after ~one duration, got ${value}`);
+    assertions++;
+    for (let i = 0; i < 60 && value !== 100; i++)
+        value = planMagnifyApproach(value, 100, 125, 16);
+    assert.equal(value, 100, 'the approach must terminate exactly');
+    assertions++;
+    assert.equal(planMagnifyApproach(5, 9, 0, 16), 9, 'zero duration is instant');
+    assertions++;
+    assert.equal(planMagnifyApproach(NaN, 9, 125, 16), 9);
     assertions++;
 }
 
