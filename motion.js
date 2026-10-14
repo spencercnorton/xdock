@@ -49,6 +49,98 @@ export function planIconMotion({hovered = false, pressed = false} = {}) {
     return {scale: 1, lift: 0};
 }
 
+/**
+ * Magnification scales for one row of dock icons, macOS-style: the icon under
+ * the pointer reaches maxScale and its neighbours fall off with distance.
+ *
+ * Distances are measured between RESTING centres, never live ones: feeding
+ * magnified geometry back into the falloff is what makes a dock hunt around
+ * the pointer instead of settling under it. `influence` is the caller's
+ * eased 0..1 "pointer is here" amount, so entering and leaving the dock
+ * swell and settle through the same curve the pointer itself gets.
+ *
+ * The falloff is cos²: flat at the top (the magnified icon does not breathe
+ * as the pointer crosses it) and flat where it lands (no visible seam where
+ * magnification ends). Growth can be capped so a full dock magnifies less
+ * rather than overflowing its monitor: every scale's excess is shrunk by
+ * the same factor, which keeps the shape and only lowers the peak.
+ *
+ * @param {object} params magnification inputs, all in resting box pixels
+ * @param {number[]} params.centers resting centre of each icon along the axis
+ * @param {number} params.itemSize resting size of one icon along the axis
+ * @param {number} params.pointer pointer position along the axis
+ * @param {number} params.influence eased presence of the pointer, 0..1
+ * @param {number} params.maxScale scale of the icon under the pointer
+ * @param {number} params.rangeFactor falloff reach, in icon sizes
+ * @param {number} [params.maxTotal] longest total the row may grow to
+ * @param {number} [params.restTotal] total length of the row at rest
+ * @returns {number[]} one scale per centre, each >= 1
+ */
+export function planMagnification({
+    centers = [],
+    itemSize,
+    pointer,
+    influence = 1,
+    maxScale,
+    rangeFactor,
+    maxTotal = Infinity,
+    restTotal = 0,
+} = {}) {
+    const rest = centers.map(() => 1);
+    if (!centers.length || !Number.isFinite(pointer) ||
+        !Number.isFinite(itemSize) || itemSize <= 0 ||
+        !Number.isFinite(maxScale) || maxScale <= 1 ||
+        !Number.isFinite(rangeFactor) || rangeFactor <= 0 ||
+        !Number.isFinite(influence) || influence <= 0)
+        return rest;
+
+    const reach = rangeFactor * itemSize;
+    const peak = (maxScale - 1) * Math.min(influence, 1);
+    const scales = centers.map(center => {
+        if (!Number.isFinite(center))
+            return 1;
+        const distance = Math.abs(pointer - center) / reach;
+        if (distance >= 1)
+            return 1;
+        const falloff = Math.cos(distance * Math.PI / 2) ** 2;
+        return 1 + peak * falloff;
+    });
+
+    if (Number.isFinite(maxTotal) && maxTotal > restTotal) {
+        const growth = scales.reduce((sum, s) => sum + (s - 1) * itemSize, 0);
+        const headroom = maxTotal - restTotal;
+        if (growth > headroom)
+            return scales.map(s => 1 + (s - 1) * headroom / growth);
+    } else if (Number.isFinite(maxTotal)) {
+        return rest;
+    }
+
+    return scales;
+}
+
+/**
+ * One step of an exponential approach, for the eased pointer position and
+ * influence magnification runs on. Reaches about 95% of the remaining
+ * distance per `durationMs`, and snaps the last epsilon so a settled dock
+ * truly stops instead of decaying towards rest forever.
+ *
+ * @param {number} current the current eased value
+ * @param {number} target the value being approached
+ * @param {number} durationMs the approach time constant window
+ * @param {number} dtMs milliseconds since the previous step
+ * @returns {number} the next eased value
+ */
+export function planMagnifyApproach(current, target, durationMs, dtMs) {
+    if (!Number.isFinite(current))
+        return target;
+    if (!Number.isFinite(target) || !Number.isFinite(dtMs) || dtMs < 0 ||
+        !Number.isFinite(durationMs) || durationMs <= 0)
+        return target;
+
+    const next = current + (target - current) * (1 - Math.exp(-3 * dtMs / durationMs));
+    return Math.abs(target - next) < 0.001 * Math.max(1, Math.abs(target)) ? target : next;
+}
+
 export const IndicatorTransition = Object.freeze({
     REVEAL: 'reveal',
     // The app stopped: drop the dot immediately. See below for why this edge

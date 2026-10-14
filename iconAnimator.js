@@ -23,8 +23,9 @@ const HOP_TIME = CYCLE_TIME * ATTENTION_BOUNCE_DUTY;
 const REST_TIME = CYCLE_TIME - HOP_TIME;
 
 // Peak displacement of the hop, away from the screen edge the dock sits
-// against. The shape peaks at about 0.76 of this, so ~12px lands.
-const HOP_HEIGHT = 16;
+// against. The shape peaks at about 0.76 of this, so ~27px lands: the hop
+// plays on the icon's floating copy, which can clear the dock edge.
+const HOP_HEIGHT = 36;
 
 const HOP_VECTOR = Object.freeze({
     [St.Side.TOP]: [0, 1],

@@ -605,6 +605,28 @@ export default class DockPreferences extends ExtensionPreferences {
             key: 'icon-size-fixed',
         });
 
+        this._switchRow(sizeGroup, {
+            title: __('Magnify icons under the pointer'),
+            subtitle: __('Grow the icon under the pointer and its neighbours. Needs a non-scrolling dock.'),
+            key: 'magnify-icons',
+        });
+        const magnifyRows = [
+            this._spinRow(sizeGroup, {
+                title: __('Magnified size'),
+                key: 'magnify-max-scale', lower: 1.1, upper: 2.5, step: 0.05, page: 0.25, digits: 2,
+            }),
+            this._spinRow(sizeGroup, {
+                title: __('Magnification reach (icons)'),
+                key: 'magnify-range-factor', lower: 1, upper: 5, step: 0.5, page: 1, digits: 1,
+            }),
+            this._spinRow(sizeGroup, {
+                title: __('Magnification response (ms)'),
+                key: 'magnify-duration', lower: 0, upper: 500, step: 5, page: 50,
+            }),
+        ];
+        magnifyRows.forEach(row =>
+            this._settings.bind('magnify-icons', row, 'sensitive', Gio.SettingsBindFlags.DEFAULT));
+
         const previewSizeScale = this._scaleRow(sizeGroup, __('Preview size scale'), {
             lower: 0, upper: 1, step: 0.01, page: 0.1,
         });

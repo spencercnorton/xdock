@@ -52,6 +52,49 @@ export async function run() {
         global.settings.set_strv('favorite-apps', ['xdock-popup-test-00.desktop']);
         await wait(500);
 
+        // Reorder within the dock itself. Drag targeting picks with
+        // PickMode.ALL, so any actor layered over the icons that still
+        // answers a pick (the dock blur's redraw clone did, before it
+        // learned not to) silently eats every drop: the drag starts, no
+        // placeholder ever appears, and the release just cancels. Assert
+        // the whole arc, not only the final order.
+        global.settings.set_strv('favorite-apps', [
+            'xdock-popup-test-00.desktop', 'xdock-popup-test-01.desktop',
+            'xdock-popup-test-02.desktop', 'xdock-popup-test-03.desktop',
+        ]);
+        await wait(500);
+        const dash = manager.mainDock.dash;
+        const dockIcons = dash.getAppIcons();
+        check(dockIcons.length >= 3, 'reorder needs at least three dock icons');
+        const draggedId = dockIcons[0].app.get_id();
+        const [rx, ry] = dockIcons[0].get_transformed_position();
+        const startX = rx + dockIcons[0].width / 2;
+        const startY = ry + dockIcons[0].height / 2;
+        const [tx2, ty2] = dockIcons[2].get_transformed_position();
+        const endX = tx2 + dockIcons[2].width / 2 + 10;
+        const endY = ty2 + dockIcons[2].height / 2;
+        move(startX, startY);
+        await wait(120);
+        pressed = true;
+        button(Clutter.ButtonState.PRESSED);
+        await wait(120);
+        for (let step = 1; step <= 10; step++) {
+            move(startX + (endX - startX) * step / 10,
+                startY + (endY - startY) * step / 10);
+            // eslint-disable-next-line no-await-in-loop -- ordered native input
+            await wait(40);
+        }
+        check(!!dockIcons[0]._dragging, 'dock icon drag must start');
+        check(!!dash._dragPlaceholder, 'drag over the dock must show a placeholder');
+        button(Clutter.ButtonState.RELEASED);
+        pressed = false;
+        await wait(600);
+        check(global.settings.get_strv('favorite-apps')[2] === draggedId,
+            'drop must move the favorite to the placeholder position');
+        result.reorder = 'pass';
+        global.settings.set_strv('favorite-apps', ['xdock-popup-test-00.desktop']);
+        await wait(500);
+
         const open = async () => {
             launcher.open(manager.mainDock.dash.showAppsButton);
             await wait(200);

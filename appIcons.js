@@ -84,13 +84,15 @@ const ICON_MOTION_TIME = 190;
 // Which way "up" is for a lifted icon: away from the screen edge the dock is
 // docked against. Lives here rather than in motion.js because this is the only
 // side that knows St.Side, which keeps planIconMotion() testable under node.
-// The launch hop: how far the icon rises, and the two legs of the arc.
-// Rising is an enter (motion_ms.fast) and falling is an exit
+// The launch bounce: a full hop clear of the dock and a smaller second one,
+// measured in icon sizes so a large dock bounces as far as it looks like it
+// should. Each rise is an enter (motion_ms.fast) and each fall an exit
 // (motion_ms.standard), which is also the right physics -- you decelerate on
 // the way up and accelerate on the way down.
-const ICON_LAUNCH_HOP = 10;
-const ICON_LAUNCH_RISE_TIME = 190;
-const ICON_LAUNCH_FALL_TIME = 250;
+const ICON_LAUNCH_HOPS = Object.freeze([
+    Object.freeze({height: 0.6, rise: 190, fall: 250}),
+    Object.freeze({height: 0.22, rise: 150, fall: 190}),
+]);
 
 const ICON_LIFT_VECTOR = Object.freeze({
     [St.Side.TOP]: [0, 1],
@@ -117,6 +119,25 @@ let recentlyClickedAppMonitor = -1;
  * - Update minimization animation target
  * - Update menu if open on windows change
  */
+// The icon's floating copy. Inside the dash, the scroll view crops anything
+// that leaves the dock's allocation (measured with a real AppIcon in a bare
+// St.ScrollView; the same bin freed to the ui group paints in full), so every
+// effect that has to travel past the dock edge -- magnification, the launch
+// bounce, the attention bounce -- paints from a copy in the ui group instead.
+// The layer carries the launch bounce and the clone inside it carries the
+// magnified scale and the attention bounce, so all three compose without two
+// animations ever writing one property. Neither is an input surface: without
+// the empty pick, DND's PickMode.ALL target search would find them.
+const FloatLayer = GObject.registerClass(
+class FloatLayer extends Clutter.Actor {
+    vfunc_pick() {}
+});
+
+const FloatClone = GObject.registerClass(
+class FloatClone extends Clutter.Clone {
+    vfunc_pick() {}
+});
+
 export const DockAbstractAppIcon = GObject.registerClass({
     GTypeFlags: GObject.TypeFlags.ABSTRACT,
     Properties: {
@@ -204,32 +225,42 @@ export const DockAbstractAppIcon = GObject.registerClass({
         });
         this.notify('updating');
 
+        this._magnifyScale = 1;
+        this._floatLayer = null;
+        this._floatClone = null;
+        this._floatChain = [];
+        this._floatChainToken = {};
+        this.connect('destroy', () => {
+            this._floatGone = true;
+            this._disconnectFloatChain();
+            this._floatLayer?.destroy();
+            this._floatLayer = null;
+            this._floatClone = null;
+        });
+
         const {notificationsMonitor} = Docking.DockManager.getDefault();
 
         this.connect('notify::urgent', () => {
-            // Bounces _iconContainer, one level up from the _iconBin the old
-            // rotation used. Hover and press own the bin's transform and the
-            // launch hop owns the BaseIcon's, so this needs its own actor or
-            // an urgent app that is also hovered would fight over one
-            // translation. _iconContainer is still a non-reactive descendant of
-            // the reactive button, so picking is untouched, and the indicator
-            // dots ride along with the icon rather than being left behind.
-            const icon = this._iconContainer;
+            // Bounces the floating clone (see FloatLayer), so the hop clears
+            // the dock edge instead of being cropped by it, and the indicator
+            // dots stay put under the icon the way a dock's do.
             this._signalsHandler.removeWithLabel(Labels.URGENT_WINDOWS);
             if (this.urgent) {
                 if (Docking.DockManager.settings.danceUrgentApplications &&
-                    notificationsMonitor.enabled)
-                    this.iconAnimator.addAnimation(icon, 'bounce');
+                    notificationsMonitor.enabled && this._ensureFloat())
+                    this.iconAnimator.addAnimation(this._floatClone, 'bounce');
 
                 if (this.running && !this._urgentWindows.size) {
                     const urgentWindows = this.getInterestingWindows();
                     urgentWindows.forEach(w => (w._manualUrgency = true));
                     this._updateUrgentWindows(urgentWindows);
                 }
-            } else {
-                this.iconAnimator.removeAnimation(icon, 'bounce');
-                icon.translation_x = 0;
-                icon.translation_y = 0;
+            } else if (this._floatClone) {
+                this.iconAnimator.removeAnimation(this._floatClone, 'bounce');
+                this._floatClone.translation_x = 0;
+                this._floatClone.translation_y = 0;
+            }
+            if (!this.urgent) {
                 this._urgentWindows.forEach(w => delete w._manualUrgency);
                 this._updateUrgentWindows();
             }
@@ -293,41 +324,175 @@ export const DockAbstractAppIcon = GObject.registerClass({
     // icon, scales the clone up and fades it out. In the overview the original
     // is going away, so that reads correctly; on a dock the icon stays exactly
     // where it is, so the same animation reads as the icon vanishing rather
-    // than as the app starting. A hop is the dock idiom, and it falls out of
-    // the motion tokens exactly -- no overshoot curve, so no motion-exception.
+    // than as the app starting. A bounce is the dock idiom, and it falls out
+    // of the motion tokens exactly -- no overshoot curve, so no
+    // motion-exception.
     //
-    // Hops this.icon (the BaseIcon), NOT this.icon._iconBin: hover and press
-    // own the bin's transform and two animations writing one translation would
-    // fight. The BaseIcon is the bin's parent and equally a non-reactive
-    // descendant of the reactive button, so the two compose for free and
-    // picking is still untouched. The indicator dots are siblings of the
-    // BaseIcon, so they stay put while the icon hops over them.
+    // Bounces the float layer: the icon has to clear the dock to read as a
+    // launch, and only the floating copy can leave the dock (see FloatLayer).
+    // The indicator dots stay in the dock, so the icon hops over them.
     animateLaunch() {
-        const {icon} = this;
-        // Reduced motion gets no hop at all rather than an instant one: a hop
-        // with no duration is not feedback, it is a no-op with extra steps.
-        if (!icon || !St.Settings.get().enable_animations)
+        // Reduced motion gets no bounce at all rather than an instant one: a
+        // bounce with no duration is not feedback, it is a no-op with extra
+        // steps.
+        if (!St.Settings.get().enable_animations || !this._ensureFloat())
             return;
+
+        // The label sits just past the (possibly magnified) icon, right where
+        // the bounce goes; the click has already answered what it said.
+        this.get_parent()?.hideLabel?.();
+
+        const layer = this._floatLayer;
+        const [dx, dy] = ICON_LIFT_VECTOR[Utils.getPosition()] ??
+            ICON_LIFT_VECTOR[St.Side.BOTTOM];
+        const size = this.icon.iconSize || this.icon._iconBin.height;
+
+        // A second launch mid-bounce restarts from wherever the icon currently
+        // is. remove_all_transitions() suppresses the old arc's onComplete, so
+        // two arcs cannot both be scheduling the next leg.
+        layer.remove_all_transitions();
+        const hop = index => {
+            const leg = ICON_LAUNCH_HOPS[index];
+            if (!leg)
+                return;
+            layer.ease({
+                translation_x: leg.height * size * dx,
+                translation_y: leg.height * size * dy,
+                duration: leg.rise,
+                mode: Clutter.AnimationMode.EASE_OUT_CUBIC,
+                onComplete: () => layer.ease({
+                    translation_x: 0,
+                    translation_y: 0,
+                    duration: leg.fall,
+                    mode: Clutter.AnimationMode.EASE_IN_CUBIC,
+                    onComplete: () => hop(index + 1),
+                }),
+            });
+        };
+        hop(0);
+    }
+
+    // Magnification (dash.js) sets the scale; the floating clone paints it,
+    // pivoted on the screen-edge side so growth spills towards the screen
+    // interior. The scale arrives already eased at the pointer, so there is
+    // nothing to tween here.
+    setMagnifyScale(scale) {
+        if (this._floatGone || scale === this._magnifyScale)
+            return;
+        this._magnifyScale = scale;
+        if (scale > 1)
+            this._ensureFloat();
+        this._syncFloat();
+    }
+
+    _ensureFloat() {
+        const iconBin = this._floatGone ? null : this.icon?._iconBin;
+        if (!iconBin)
+            return null;
+        if (this._floatLayer)
+            return this._floatLayer;
+
+        this._floatLayer = new FloatLayer({reactive: false, visible: false});
+        this._floatClone = new FloatClone({source: iconBin, reactive: false});
+        this._floatLayer.add_child(this._floatClone);
+        Main.uiGroup.add_child(this._floatLayer);
+
+        // The animations write these; floating starts and ends with them.
+        const sync = () => this._syncFloat();
+        this._floatLayer.connectObject(
+            'notify::translation-x', sync,
+            'notify::translation-y', sync, this);
+        this._floatClone.connectObject(
+            'notify::translation-x', sync,
+            'notify::translation-y', sync, this);
+        // The chain can only reach the stage once the icon is in the dock.
+        this.connectObject('notify::mapped', () => this._connectFloatChain(), this);
+        this._connectFloatChain();
+        return this._floatLayer;
+    }
+
+    // The copy follows the bin through every layout change between it and the
+    // ui group: magnification widening its neighbours, the dock re-centring
+    // as it grows, the dock sliding in and out. Allocation notifications fire
+    // inside the layout pass, so the position is current for the frame being
+    // painted rather than one frame late (the earlier BEFORE_REDRAW hook ran
+    // before relayout and left every clone where the previous frame had it).
+    _connectFloatChain() {
+        this._disconnectFloatChain();
+        const iconBin = this.icon?._iconBin;
+        const sync = () => this._syncFloat();
+        for (let actor = iconBin; actor && actor !== Main.uiGroup; actor = actor.get_parent()) {
+            actor.connectObject(
+                'notify::allocation', sync,
+                'notify::translation-x', sync,
+                'notify::translation-y', sync,
+                'notify::scale-x', sync, this._floatChainToken);
+            this._floatChain.push(actor);
+        }
+        this._syncFloat();
+    }
+
+    _disconnectFloatChain() {
+        for (const actor of this._floatChain)
+            actor.disconnectObject(this._floatChainToken);
+        this._floatChain = [];
+    }
+
+    // Just above the dock, so the copy paints over the dock's own background
+    // (and is not blurred into it), with the label above the copy. Checked
+    // each time the copy appears: the dock can be restacked in between.
+    _stackFloat() {
+        let dock = this;
+        while (dock && dock.get_parent() !== Main.uiGroup)
+            dock = dock.get_parent();
+        if (!dock)
+            return;
+        Main.uiGroup.set_child_above_sibling(this._floatLayer, dock);
+        const label = this.get_parent()?.label;
+        if (label?.get_parent() === Main.uiGroup)
+            Main.uiGroup.set_child_above_sibling(label, this._floatLayer);
+    }
+
+    _syncFloat() {
+        const layer = this._floatLayer;
+        const clone = this._floatClone;
+        const iconBin = this._floatGone ? null : this.icon?._iconBin;
+        if (!layer || !iconBin)
+            return;
+
+        const floating = this.mapped && (this._magnifyScale > 1 ||
+            layer.translation_x !== 0 || layer.translation_y !== 0 ||
+            clone.translation_x !== 0 || clone.translation_y !== 0);
+        if (floating !== layer.visible) {
+            if (floating)
+                this._stackFloat();
+            layer.visible = floating;
+            // Hides the bin and its tile background together; the background
+            // left in the dock would read as an empty slot under the floating
+            // icon. Opacity rather than a style change: a new style starts a
+            // theme transition that keeps repainting after the bounce ends.
+            // The clone paints the bin at its own opacity, so it is unaffected.
+            this.icon.opacity = floating ? 0 : 255;
+        }
+        this.get_parent()?.syncLabelPosition?.();
+        if (!floating)
+            return;
+
+        // Rest position of the bin. Its own hover/press transform is applied
+        // to the clone below rather than read back through the stage, where
+        // it would count twice.
+        const [parentX, parentY] = iconBin.get_parent().get_transformed_position();
+        const box = iconBin.get_allocation_box();
+        layer.set_position(
+            parentX + box.x1 + iconBin.translation_x,
+            parentY + box.y1 + iconBin.translation_y);
 
         const [dx, dy] = ICON_LIFT_VECTOR[Utils.getPosition()] ??
             ICON_LIFT_VECTOR[St.Side.BOTTOM];
-
-        // A second launch mid-hop restarts from wherever the icon currently is.
-        // remove_all_transitions() suppresses the first hop's onComplete, so
-        // the two arcs cannot both be scheduling a fall.
-        icon.remove_all_transitions();
-        icon.ease({
-            translation_x: ICON_LAUNCH_HOP * dx,
-            translation_y: ICON_LAUNCH_HOP * dy,
-            duration: ICON_LAUNCH_RISE_TIME,
-            mode: Clutter.AnimationMode.EASE_OUT_CUBIC,
-            onComplete: () => icon.ease({
-                translation_x: 0,
-                translation_y: 0,
-                duration: ICON_LAUNCH_FALL_TIME,
-                mode: Clutter.AnimationMode.EASE_IN_CUBIC,
-            }),
-        });
+        const scale = this._magnifyScale * iconBin.scale_x;
+        clone.set_pivot_point(0.5 - dx / 2, 0.5 - dy / 2);
+        if (clone.scale_x !== scale)
+            clone.set_scale(scale, scale);
     }
 
     _updateIconMotion() {
@@ -335,8 +500,13 @@ export const DockAbstractAppIcon = GObject.registerClass({
         if (!iconBin)
             return;
 
+        // Magnification already answers hover, so while it is on only the
+        // press shrink plays; the floating clone multiplies it into the
+        // magnified scale (see _syncFloat).
+        const {settings} = Docking.DockManager;
+        const magnifying = settings.magnifyIcons && !settings.iconSizeFixed;
         const {scale, lift} = Motion.planIconMotion({
-            hovered: this.hover,
+            hovered: this.hover && !magnifying,
             pressed: this.pressed,
         });
         const [dx, dy] = ICON_LIFT_VECTOR[Utils.getPosition()] ??
@@ -1713,6 +1883,25 @@ export function itemShowLabel() {
     this.label.opacity = 0;
     this.label.show();
 
+    const [x, y] = itemPlaceLabel.call(this);
+    this.label.remove_all_transitions();
+    this.label.set_position(x, y);
+    this.label.ease({
+        opacity: 255,
+        duration: DASH_ITEM_LABEL_SHOW_TIME,
+        mode: Clutter.AnimationMode.EASE_OUT_CUBIC,
+    });
+    /* eslint-enable no-invalid-this */
+}
+
+/**
+ * Where an item's label goes: beside the item, towards the screen interior,
+ * and past a magnified icon's grown edge rather than over it.
+ *
+ * @returns {number[]} the label's stage position
+ */
+export function itemPlaceLabel() {
+    /* eslint-disable no-invalid-this */
     const [stageX, stageY] = this.get_transformed_position();
     const node = this.label.get_theme_node();
 
@@ -1753,6 +1942,21 @@ export function itemShowLabel() {
         break;
     }
 
+    // The item is laid out at rest height across the dock; a magnified icon
+    // grows past it towards the screen interior by its extra scale.
+    const iconBin = this.child?.icon?._iconBin;
+    const grow = (this.child?._magnifyScale ?? 1) - 1;
+    if (iconBin && grow > 0) {
+        if (position === St.Side.BOTTOM)
+            y -= iconBin.height * grow;
+        else if (position === St.Side.TOP)
+            y += iconBin.height * grow;
+        else if (position === St.Side.LEFT)
+            x += iconBin.width * grow;
+        else if (position === St.Side.RIGHT)
+            x -= iconBin.width * grow;
+    }
+
     // keep the label inside the screen border
     // Only needed fot the x coordinate.
 
@@ -1764,12 +1968,6 @@ export function itemShowLabel() {
     else if (x + labelWidth > monitor.x + monitor.width - gap)
         x -= x + labelWidth - (monitor.x + monitor.width) + gap;
 
-    this.label.remove_all_transitions();
-    this.label.set_position(x, y);
-    this.label.ease({
-        opacity: 255,
-        duration: DASH_ITEM_LABEL_SHOW_TIME,
-        mode: Clutter.AnimationMode.EASE_OUT_CUBIC,
-    });
+    return [x, y];
     /* eslint-enable no-invalid-this */
 }
